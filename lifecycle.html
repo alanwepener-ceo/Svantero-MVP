@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Svantero SVO₂ — Carbon Credit Lifecycle Management (MVP)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http://www.w3.org/2000/svg%22%20viewBox%3D%220%200%20120%20120%22%3E%3Crect%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22%230B3D2E%22/%3E%3Cg%20transform%3D%22translate(15,14.865)%22%20fill%3D%22%23C9A227%22%3E%3Cpath%20d%3D%22M5,51h23.677L45,79.271L61.322,51H85v-6H64.786l19.63-34H5.584l19.63,34H5V51z%20M45,68.368L34.972,51h20.055L45,68.368z%20%20%20M14.765,16h60.47L58.492,45H31.508L14.765,16z%22/%3E%3C/g%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header" id="site-header"></header>
+
+<div class="page-wrap">
+
+  <div class="disclaimer-banner">
+    Illustrative MVP for demonstration purposes only. The retirement demo below is simulated; no real on-chain
+    retirement occurs.
+  </div>
+
+  <div class="page-title">
+    <div>
+      <h1>Carbon Credit Lifecycle Management</h1>
+      <p>Every tokenised carbon credit moves through seven managed stages, from initial verification to final retirement.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h3>The Seven Stages</h3>
+    <div class="stepper" id="stepper"></div>
+    <div id="stage-detail" style="margin-top:6px;padding:14px;background:var(--primary-pale);border-radius:8px;font-size:13.5px;color:var(--dark);"></div>
+    <div id="governance-signal" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h3>Carbon Credits by Lifecycle Stage</h3>
+    <p style="font-size:13px;color:var(--grey);margin-bottom:12px;">
+      A live snapshot of every carbon credit type on the platform, showing how many units currently sit at each
+      of the seven lifecycle stages, plus how much of each type remains available for trading versus has already
+      been permanently retired.
+    </p>
+    <div style="overflow-x:auto;">
+      <table id="stage-breakdown-table" style="min-width:920px;">
+        <thead>
+          <tr>
+            <th>Credit Type</th>
+            <th>Verification</th>
+            <th>Issuance &amp; Registry</th>
+            <th>Tokenisation</th>
+            <th>Distribution</th>
+            <th>Trading (Available)</th>
+            <th>Audit</th>
+            <th>Retirement (Retired)</th>
+            <th>Total Units</th>
+          </tr>
+        </thead>
+        <tbody id="stage-breakdown-body"></tbody>
+        <tfoot id="stage-breakdown-foot"></tfoot>
+      </table>
+    </div>
+    <p style="font-size:11px;color:var(--grey-light);margin-top:10px;">
+      Illustrative pipeline snapshot — simulated inventory split, not a live registry feed. "Trading (Available)"
+      is the volume currently listed and tradeable on SVX; "Retirement (Retired)" is permanently retired and can
+      never be resold or reused.
+    </p>
+  </div>
+
+  <div class="grid grid-main">
+    <div class="card">
+      <h3>Why Lifecycle Management Matters</h3>
+      <ul style="font-size:13.5px;color:var(--grey);padding-left:18px;line-height:1.7;">
+        <li>Prevents double-counting through a single, auditable chain of custody from verification to retirement.</li>
+        <li>Gives corporates and individuals full transparency over where their carbon credits came from and how they were used.</li>
+        <li>Supports ESG and regulatory disclosure with downloadable, on-chain-verifiable audit trails.</li>
+        <li>Ties SVO₂'s deflationary burn mechanism directly to real-world retirement activity.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>Retire a Credit — Demo</h3>
+      <div class="field">
+        <label>Credit type</label>
+        <select id="retire-type"></select>
+      </div>
+      <div class="field">
+        <label>Units to retire (tCO₂e)</label>
+        <input type="number" id="retire-units" placeholder="e.g. 50" min="0">
+      </div>
+      <button class="btn btn-primary btn-block" onclick="retireCredit()">Retire Credit</button>
+
+      <div id="retire-result" style="display:none;margin-top:14px;padding:14px;border-radius:8px;background:#e6f4ea;font-size:13px;">
+        <strong>Retirement certificate generated.</strong>
+        <div id="retire-result-body" style="margin-top:6px;color:var(--grey);"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  Svantero / SVO₂ Carbon Credit Lifecycle Management — MVP · Illustrative demo, not connected to a real registry or blockchain.
+</div>
+
+<script src="app.js"></script>
+<script>
+  SVO2.renderHeader("lifecycle");
+
+  const stepperEl = document.getElementById("stepper");
+  const detailEl = document.getElementById("stage-detail");
+
+  function governanceSignalHtml(stageName) {
+    if (stageName === "Verification") {
+      const rows = SVO2.verificationEvents.slice(0, 3);
+      return `
+        <div class="card" style="background:var(--secondary-pale);border-color:#ecd48a;">
+          <h4 style="margin-bottom:6px;">Governance Signal — Live Verification Events</h4>
+          <p style="font-size:12px;color:var(--grey);margin-bottom:8px;">
+            Fed live from the Governance &amp; Trust Layer on the <a href="tokenisation.html">Tokenisation Engine</a>
+            page — no credit can proceed to Issuance &amp; Registry Listing until it has a signed verification event.
+          </p>
+          ${rows.map(v => `<div style="font-size:12px;padding:4px 0;border-top:1px solid #ecd48a;">
+            <span class="tag tag-gold">${v.cls}</span> ${v.project} —
+            <span class="tag ${v.status === "Verified" ? "tag-green" : "tag-red"}">${v.status}</span>
+            <span style="color:var(--grey-light);"> · ${v.ts}</span>
+          </div>`).join("")}
+        </div>`;
+    }
+    if (stageName === "Audit") {
+      return `
+        <div class="card" style="background:var(--secondary-pale);border-color:#ecd48a;">
+          <h4 style="margin-bottom:6px;">Governance Signal — Trust Class &amp; Bonding Reference</h4>
+          <p style="font-size:12px;color:var(--grey);margin-bottom:8px;">
+            Audit reports cross-reference each credit's Carbon Trust Class and origination partner bond, both
+            set by the Governance &amp; Trust Layer on the <a href="tokenisation.html">Tokenisation Engine</a> page.
+          </p>
+          ${SVO2.trustClasses.map(t => `<div style="font-size:12px;padding:4px 0;border-top:1px solid #ecd48a;">
+            <span class="tag tag-gold">${t.cls}</span> ${t.name} — bond requirement ${t.bonding}
+          </div>`).join("")}
+        </div>`;
+    }
+    return "";
+  }
+
+  function paintStepper(activeIdx) {
+    stepperEl.innerHTML = SVO2.lifecycleStages.map((s, i) =>
+      `<div class="step ${i === activeIdx ? "active" : ""}" onclick="selectStage(${i})">
+        <div class="num">${i + 1}</div><div class="name">${s.name}</div>
+      </div>`
+    ).join("");
+    detailEl.textContent = SVO2.lifecycleStages[activeIdx].desc;
+    document.getElementById("governance-signal").innerHTML = governanceSignalHtml(SVO2.lifecycleStages[activeIdx].name);
+  }
+  function selectStage(i) { paintStepper(i); }
+  paintStepper(0);
+
+  /* ===================== Carbon Credits by Lifecycle Stage ===================== */
+  function paintStageBreakdown() {
+    const rows = SVO2.computeStageBreakdown();
+    document.getElementById("stage-breakdown-body").innerHTML = rows.map(r => `
+      <tr>
+        <td><strong>${r.ticker}</strong><br><span style="font-size:11px;color:var(--grey-light);">${r.type}</span></td>
+        <td>${SVO2.fmt(r.stages[0])}</td>
+        <td>${SVO2.fmt(r.stages[1])}</td>
+        <td>${SVO2.fmt(r.stages[2])}</td>
+        <td>${SVO2.fmt(r.stages[3])}</td>
+        <td><span class="tag tag-green">${SVO2.fmt(r.trading)}</span></td>
+        <td>${SVO2.fmt(r.stages[5])}</td>
+        <td><span class="tag" style="background:var(--primary-pale);color:var(--primary);">${SVO2.fmt(r.retired)}</span></td>
+        <td><strong>${SVO2.fmt(r.units)}</strong></td>
+      </tr>`
+    ).join("");
+
+    const totals = rows.reduce((acc, r) => {
+      r.stages.forEach((v, i) => { acc.stages[i] = (acc.stages[i] || 0) + v; });
+      acc.units += r.units;
+      return acc;
+    }, { stages: [], units: 0 });
+
+    document.getElementById("stage-breakdown-foot").innerHTML = `
+      <tr style="font-weight:700;background:var(--primary-pale);">
+        <td>Platform Total</td>
+        <td>${SVO2.fmt(totals.stages[0])}</td>
+        <td>${SVO2.fmt(totals.stages[1])}</td>
+        <td>${SVO2.fmt(totals.stages[2])}</td>
+        <td>${SVO2.fmt(totals.stages[3])}</td>
+        <td>${SVO2.fmt(totals.stages[4])}</td>
+        <td>${SVO2.fmt(totals.stages[5])}</td>
+        <td>${SVO2.fmt(totals.stages[6])}</td>
+        <td>${SVO2.fmt(totals.units)}</td>
+      </tr>`;
+  }
+  paintStageBreakdown();
+
+  const retireSelect = document.getElementById("retire-type");
+  retireSelect.innerHTML = SVO2.creditTypes.map(c => `<option value="${c.type}">${c.type}</option>`).join("");
+
+  function retireCredit() {
+    const type = document.getElementById("retire-type").value;
+    const units = parseFloat(document.getElementById("retire-units").value);
+    if (!units || units <= 0) { SVO2.showToast("Enter a number of units to retire."); return; }
+    const certId = "SVO2-RET-" + Math.floor(100000 + Math.random() * 900000);
+    document.getElementById("retire-result-body").innerHTML =
+      `Certificate ID: <strong>${certId}</strong><br>Credit type: ${type}<br>Units retired: ${SVO2.fmt(units)} tCO₂e
+       <br>Timestamp: ${new Date().toLocaleString()}<br>Status: Permanently retired on-chain — cannot be resold or re-used.`;
+    document.getElementById("retire-result").style.display = "block";
+    SVO2.showToast(`Retired ${SVO2.fmt(units)} tCO₂e of ${type} (simulated).`);
+    document.getElementById("retire-units").value = "";
+  }
+</script>
+</body>
+</html>

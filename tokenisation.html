@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Svantero SVO₂ — Tokenisation Engine (MVP)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http://www.w3.org/2000/svg%22%20viewBox%3D%220%200%20120%20120%22%3E%3Crect%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22%230B3D2E%22/%3E%3Cg%20transform%3D%22translate(15,14.865)%22%20fill%3D%22%23C9A227%22%3E%3Cpath%20d%3D%22M5,51h23.677L45,79.271L61.322,51H85v-6H64.786l19.63-34H5.584l19.63,34H5V51z%20M45,68.368L34.972,51h20.055L45,68.368z%20%20%20M14.765,16h60.47L58.492,45H31.508L14.765,16z%22/%3E%3C/g%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header" id="site-header"></header>
+
+<div class="page-wrap">
+
+  <div class="disclaimer-banner">
+    Illustrative MVP for demonstration purposes only. The tokenisation flow below is a simulated demo; no real
+    certification, minting, or blockchain transaction occurs.
+  </div>
+
+  <div class="page-title">
+    <div>
+      <button class="btn btn-dark"
+        style="margin-bottom:10px;font-size:12px;padding:6px 12px;"
+        onclick="document.getElementById('royalty-section').scrollIntoView({behavior:'smooth'})">
+        &#8595; Tokenised Royalties
+      </button>
+      <h1>The Tokenisation Engine</h1>
+      <p>Converts verified carbon credits into on-chain, SVO₂-denominated tokens with full traceability to source.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h3>How a Credit Becomes a Token</h3>
+    <div class="flow">
+      <div class="fnode">Verified Credit</div><div class="arrow">→</div>
+      <div class="fnode">Certification Check</div><div class="arrow">→</div>
+      <div class="fnode">Mint SVO₂-Denominated Token</div><div class="arrow">→</div>
+      <div class="fnode">Registry Update</div><div class="arrow">→</div>
+      <div class="fnode">Live on Exchange</div>
+    </div>
+  </div>
+
+  <div class="grid grid-main" style="margin-bottom:16px;">
+    <div class="card">
+      <h3>Tokenise a Credit — Demo</h3>
+      <div class="field">
+        <label>Project / origin</label>
+        <select id="tok-project">
+          <option>Ras Al Khaimah — Regenerative Urbanisation</option>
+          <option>Multi-Origin Partner — Nature-Based Removal</option>
+          <option>Multi-Origin Partner — Renewable Energy Avoidance</option>
+          <option>Multi-Origin Partner — Industrial Efficiency</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Verified credit volume (tCO₂e)</label>
+        <input type="number" id="tok-volume" placeholder="e.g. 5000" min="0">
+      </div>
+      <button class="btn btn-primary btn-block" onclick="runTokenisation()">Tokenise Credit</button>
+
+      <div style="margin-top:16px;padding:14px 16px;background:var(--bg);border:1px solid var(--border);border-radius:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <h4 style="margin:0;font-size:13px;">Upload Documentation</h4>
+          <span class="link-inline" onclick="quickFillPreflight()">Quick-fill for demo</span>
+        </div>
+        <div id="tok-doc-list"></div>
+
+        <h4 style="margin:16px 0 8px;font-size:13px;">Governance Checks</h4>
+        <div id="tok-gov-checklist"></div>
+
+        <h4 style="margin:16px 0 8px;font-size:13px;">KYC Requirements</h4>
+        <div id="tok-kyc-checklist"></div>
+
+        <p style="font-size:10.5px;color:var(--grey-light);margin-top:10px;">
+          Modelled on institutional real-world-asset issuance standards — pre-issuance qualification, independent
+          custody/legal verification, and KYC/AML-gated transfer approval. No documents are actually uploaded or
+          stored; this is a front-end-only simulation, and tokenisation is blocked until every item here is complete.
+        </p>
+      </div>
+
+      <div id="tok-conditions" style="margin-top:14px;"></div>
+
+      <div class="progress-bar" style="display:none;" id="tok-progress-wrap">
+        <div class="fill" id="tok-progress-fill"></div>
+      </div>
+      <div id="tok-result" style="display:none;margin-top:14px;padding:14px;border-radius:8px;background:var(--primary-pale);font-size:13px;">
+        <strong>Tokenisation complete.</strong>
+        <div id="tok-result-body" style="margin-top:6px;color:var(--grey);"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Tokenisation Progress</h3>
+      <p style="font-size:12px;color:var(--grey-light);margin-bottom:10px;">
+        Live status of carbon credit batches currently moving through the seven-stage tokenisation pipeline.
+        Each bar segment corresponds to a stage in <a href="lifecycle.html">Carbon Credit Lifecycle Management</a>.
+      </p>
+      <div id="tok-queue-list"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Why Tokenisation Matters</h3>
+    <div class="grid grid-3">
+      <div>
+        <h4>Credibility</h4>
+        <p style="font-size:13px;color:var(--grey);">Every token is backed by an independently verified, registry-listed carbon credit — eliminating duplicate or unverifiable claims.</p>
+      </div>
+      <div>
+        <h4>Liquidity</h4>
+        <p style="font-size:13px;color:var(--grey);">Tokenisation makes credits instantly tradeable on the Decentralised Carbon Exchange, unlocking liquidity that traditional registries cannot offer.</p>
+      </div>
+      <div>
+        <h4>Traceability</h4>
+        <p style="font-size:13px;color:var(--grey);">On-chain records provide a permanent, auditable trail from original verification through to eventual retirement.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== Tokenised Production-Linked Royalties ===================== -->
+  <div class="card" id="royalty-section" style="margin-top:16px;scroll-margin-top:24px;">
+    <h3>Tokenised Production-Linked Royalties</h3>
+    <p style="font-size:13.5px;color:var(--grey);">
+      Alongside tokenised carbon credits, Svantero issues a second class of tokenised instrument: fractional,
+      yield-bearing rights to a pro-rata share of verified production revenue from an underlying decarbonisation
+      project. Each royalty right is structured as a regulated security, held by a bankruptcy-remote SPV, and
+      issued as an ERC-3643 (T-REX) token — the same permissioned, compliance-gated standard that underpins the
+      platform's Governance &amp; Trust Layer below.
+    </p>
+
+    <h4 style="margin-top:14px;">How Royalty Tokenisation Works</h4>
+    <ul style="font-size:13px;color:var(--grey);padding-left:18px;line-height:1.7;">
+      <li>The underlying rights (land or harvesting rights, or credit-generation rights) are transferred into a bankruptcy-remote SPV, which is the legal issuer of record — not Svantero directly.</li>
+      <li>Verified production and sales data (tonnage, litres, or credits sold) is fed on-chain via oracle or multi-sig-verified reports.</li>
+      <li>Token holders receive their pro-rata royalty share automatically, distributed quarterly through a dedicated Revenue Distribution contract.</li>
+      <li>At maturity, the SPV repays the full principal per token, and tokens are burned on redemption.</li>
+      <li>Investor eligibility, transfer rules, and KYC/AML are enforced on-chain via ONCHAINID and the same Governance &amp; Trust Layer framework used for tokenised carbon credits.</li>
+    </ul>
+
+    <h4 style="margin-top:18px;">Available Royalty-Right Products</h4>
+    <div class="grid grid-3" id="royalty-products-grid" style="margin-top:8px;"></div>
+    <p style="font-size:11px;color:var(--grey-light);margin-top:10px;">
+      SVBR is Svantero's existing, live tokenised royalty offering. The RAK-specific products are new and
+      illustrative — indicative terms only, pending final structuring and regulatory sign-off under the RAK DAO
+      / FSRA licensing track.
+    </p>
+  </div>
+
+  <!-- ===================== Governance & Trust Layer ===================== -->
+  <div class="card" style="margin-top:16px;">
+    <h3>The Governance &amp; Trust Layer</h3>
+    <p style="font-size:13.5px;color:var(--grey);">
+      Sitting beneath the tokenisation engine is a governance and trust layer, conceptually modelled on
+      institutional real-world-asset trust infrastructure: every tokenised carbon credit is bound to a defined
+      trust tier, an independently signed verification event, and a live economic bond before it can be minted.
+      Governance signals generated here are shared across the platform — they also appear on the
+      <a href="lifecycle.html">Carbon Credit Lifecycle Management</a> page, attached to the Verification and
+      Audit stages, so every part of the ecosystem is working from the same source of truth.
+    </p>
+
+    <h4 style="margin-top:16px;">Carbon Trust Classes</h4>
+    <table>
+      <thead><tr><th>Class</th><th>Applies To</th><th>Origination Partner Bond</th><th>Verification Cadence</th></tr></thead>
+      <tbody id="trust-class-body"></tbody>
+    </table>
+
+    <h4 style="margin-top:18px;">Mint Authorisation Conditions</h4>
+    <p style="font-size:13px;color:var(--grey);">A tokenisation request cannot be minted until every condition below is satisfied — there is no override path.</p>
+    <ul id="mint-conditions-list" style="font-size:13px;color:var(--grey);padding-left:18px;line-height:1.7;"></ul>
+
+    <h4 style="margin-top:18px;">Live Governance Feed</h4>
+    <table>
+      <thead><tr><th>Project</th><th>Trust Class</th><th>Verifier</th><th>Status</th><th>Timestamp</th></tr></thead>
+      <tbody id="governance-feed-body"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<div class="modal-overlay" id="royalty-invest-modal">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-head"><h4>Invest in Royalty Tokens</h4><button class="modal-close" onclick="SVO2.closeModal('royalty-invest-modal')">&times;</button></div>
+    <div class="field">
+      <label>Product</label>
+      <select id="royalty-product-select" onchange="updateRoyaltyCalc()"></select>
+    </div>
+    <div class="field">
+      <label>Number of tokens</label>
+      <input type="number" id="royalty-qty" placeholder="e.g. 2" min="0" oninput="updateRoyaltyCalc()">
+    </div>
+    <div id="royalty-calc-output" style="font-size:12.5px;color:var(--grey);margin:10px 0;"></div>
+    <button class="btn btn-primary btn-block" onclick="confirmRoyaltyInvest()">Confirm Investment</button>
+    <p class="modal-foot-note">Simulated transaction — settles instantly in this demo. Real royalty-right offerings are available to eligible sophisticated / professional investors only, subject to KYC/AML and jurisdictional restrictions.</p>
+  </div>
+</div>
+
+<div class="footer">
+  Svantero / SVO₂ Tokenisation Engine — MVP · Illustrative demo, not connected to a real certification body or blockchain.
+</div>
+
+<script src="app.js"></script>
+<script>
+  SVO2.renderHeader("tokenisation");
+
+  /* ---------------- Tokenisation Progress ---------------- */
+  function paintTokenisationQueue() {
+    document.getElementById("tok-queue-list").innerHTML = SVO2.tokenisationQueue.map(q => {
+      const stageName = SVO2.lifecycleStages[q.stage].name;
+      const pct = Math.round(((q.stage + 1) / SVO2.lifecycleStages.length) * 100);
+      const segs = SVO2.lifecycleStages.map((s, i) => {
+        const cls = i < q.stage ? "filled" : i === q.stage ? "current" : "";
+        return `<div class="tok-seg ${cls}" title="${s.name}"></div>`;
+      }).join("");
+      return `
+        <div class="tok-queue-item">
+          <div class="tok-queue-head">
+            <span class="nm">${q.project}</span>
+            <span class="meta">${SVO2.fmt(q.volume)} tCO₂e · <span class="tag tag-gold">${q.trustClass}</span></span>
+          </div>
+          <div class="tok-stage-bar">${segs}</div>
+          <div class="tok-stage-label">Stage ${q.stage + 1} of ${SVO2.lifecycleStages.length} — ${stageName} (${pct}% complete) · updated ${q.updated}</div>
+        </div>`;
+    }).join("");
+  }
+  paintTokenisationQueue();
+
+  /* ---------------- Tokenised Production-Linked Royalties ---------------- */
+  function paintRoyaltyProducts() {
+    document.getElementById("royalty-products-grid").innerHTML = SVO2.royaltyProducts.map(p => `
+      <div class="card" style="padding:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+          <h4 style="margin-bottom:2px;">${p.name}</h4>
+          <span class="tag ${p.illustrative ? "tag-gold" : "tag-green"}">${p.illustrative ? "Illustrative" : "Live"}</span>
+        </div>
+        <p style="font-size:11.5px;color:var(--grey-light);margin-bottom:8px;">${p.symbol} · ${p.location}</p>
+        <p style="font-size:12.5px;color:var(--grey);margin-bottom:10px;">${p.underlying}</p>
+        <table style="font-size:12px;width:100%;margin-bottom:10px;">
+          <tr><td style="color:var(--grey-light);padding:2px 0;">Price / token</td><td style="text-align:right;font-weight:600;">${SVO2.fmtUsd(p.priceUsd)}</td></tr>
+          <tr><td style="color:var(--grey-light);padding:2px 0;">Total supply</td><td style="text-align:right;">${SVO2.fmt(p.totalSupply)} (${p.unitLabel} each)</td></tr>
+          <tr><td style="color:var(--grey-light);padding:2px 0;">Term</td><td style="text-align:right;">${p.term}</td></tr>
+          <tr><td style="color:var(--grey-light);padding:2px 0;">Projected 5-yr IRR</td><td style="text-align:right;">${(p.irr * 100).toFixed(0)}%</td></tr>
+          <tr><td style="color:var(--grey-light);padding:2px 0;">MOIC</td><td style="text-align:right;">${p.moic.toFixed(2)}×</td></tr>
+          <tr><td style="color:var(--grey-light);padding:2px 0;">Collateral LTV</td><td style="text-align:right;">${(p.ltv * 100).toFixed(1)}%</td></tr>
+        </table>
+        <p style="font-size:11.5px;color:var(--grey);margin-bottom:10px;"><strong>Royalty:</strong> ${p.royaltyDesc}</p>
+        <p style="font-size:10.5px;color:var(--grey-light);margin-bottom:10px;">${p.standard} · ${p.regulator}</p>
+        <button class="btn btn-primary btn-block" onclick="openRoyaltyModal('${p.id}')">Invest</button>
+      </div>
+    `).join("");
+  }
+  paintRoyaltyProducts();
+
+  function openRoyaltyModal(productId) {
+    document.getElementById("royalty-product-select").innerHTML = SVO2.royaltyProducts.map(p =>
+      `<option value="${p.id}" ${p.id === productId ? "selected" : ""}>${p.name} (${p.symbol})</option>`
+    ).join("");
+    document.getElementById("royalty-qty").value = "";
+    updateRoyaltyCalc();
+    SVO2.openModal("royalty-invest-modal");
+  }
+
+  function updateRoyaltyCalc() {
+    const id = document.getElementById("royalty-product-select").value;
+    const p = SVO2.royaltyProducts.find(x => x.id === id);
+    const qty = parseFloat(document.getElementById("royalty-qty").value) || 0;
+    const out = document.getElementById("royalty-calc-output");
+    if (!p) { out.innerHTML = ""; return; }
+    const totalCost = qty * p.priceUsd;
+    let html = `<div>Total investment: <strong>${SVO2.fmtUsd(totalCost)}</strong></div>
+      <div>Projected total cash return (over full term, incl. principal): <strong>${SVO2.fmtUsd(qty * p.totalCashReturn)}</strong></div>`;
+    if (p.annualCashflowPerHectare) {
+      const rows = p.annualCashflowPerHectare.map(r => {
+        const perTokenTotal = (r.royalty + r.principal) * p.hectaresPerToken;
+        return `<tr><td>${r.year}</td><td style="text-align:right;">${SVO2.fmtUsd(perTokenTotal * qty)}</td></tr>`;
+      }).join("");
+      html += `<table style="width:100%;margin-top:8px;font-size:11.5px;">
+        <thead><tr><th>Year</th><th style="text-align:right;">Cash Flow (this holding)</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+    out.innerHTML = html;
+  }
+
+  function confirmRoyaltyInvest() {
+    const id = document.getElementById("royalty-product-select").value;
+    const p = SVO2.royaltyProducts.find(x => x.id === id);
+    const qty = parseFloat(document.getElementById("royalty-qty").value);
+    if (!qty || qty <= 0) { SVO2.showToast("Enter a number of tokens."); return; }
+    SVO2.closeModal("royalty-invest-modal");
+    SVO2.showToast(`Invested in ${SVO2.fmt(qty)} × ${p.symbol} for ${SVO2.fmtUsd(qty * p.priceUsd)} (simulated).`);
+  }
+
+  document.getElementById("trust-class-body").innerHTML = SVO2.trustClasses.map(t =>
+    `<tr><td>${t.cls}</td><td>${t.name}<br><span style="color:var(--grey-light);font-size:11.5px;">${t.desc}</span></td><td>${t.bonding}</td><td>${t.cadence}</td></tr>`
+  ).join("");
+
+  document.getElementById("mint-conditions-list").innerHTML = SVO2.mintConditions.map(c => `<li id="mint-cond-${SVO2.mintConditions.indexOf(c)}">${c}</li>`).join("");
+
+  function paintGovernanceFeed() {
+    document.getElementById("governance-feed-body").innerHTML = SVO2.verificationEvents.map(v =>
+      `<tr><td>${v.project}</td><td><span class="tag tag-gold">${v.cls}</span></td><td>${v.verifier}</td>
+        <td><span class="tag ${v.status === "Verified" ? "tag-green" : "tag-red"}">${v.status}</span></td><td>${v.ts}</td></tr>`
+    ).join("");
+  }
+  paintGovernanceFeed();
+
+  const PROJECT_TRUST_CLASS = {
+    "Ras Al Khaimah — Regenerative Urbanisation": "Class I",
+    "Multi-Origin Partner — Nature-Based Removal": "Class II",
+    "Multi-Origin Partner — Renewable Energy Avoidance": "Class II",
+    "Multi-Origin Partner — Industrial Efficiency": "Class III",
+  };
+
+  /* ---------------- Pre-flight: Upload Documentation / Governance Checks / KYC ----------------
+     Modelled on institutional RWA issuance standards (e.g. pre-issuance qualification, independent
+     custody/legal verification, and KYC/AML-gated transfer approval): tokenisation is blocked until
+     the required documentation, governance checks, and KYC requirements are all satisfied. */
+  const PREFLIGHT_DOCS = [
+    "Registry Extract / Verification Report",
+    "Independent Auditor Confirmation",
+    "Legal Opinion Letter",
+    "Chain-of-Custody / Registry Listing Confirmation",
+    "Project Valuation & Methodology Report",
+  ];
+  const PREFLIGHT_GOVERNANCE = [
+    "Verification event independently signed by registrar or certifier",
+    "Applicable Carbon Trust Class assigned",
+    "Origination partner bond posted and confirmed live",
+    "No open dispute or encumbrance on the project",
+    "Mandatory cooling-off period elapsed",
+  ];
+  const PREFLIGHT_KYC = [
+    "On-chain identity (ONCHAINID-equivalent) verified",
+    "KYC / AML checks current",
+    "Jurisdictional eligibility confirmed (no restricted territories)",
+    "Wallet added to the approved recipient registry",
+  ];
+
+  function paintPreflight() {
+    document.getElementById("tok-doc-list").innerHTML = PREFLIGHT_DOCS.map((d, i) => `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;flex-wrap:wrap;">
+        <span>${d}</span>
+        <span style="display:flex;align-items:center;gap:8px;">
+          <span id="doc-status-${i}" class="tag tag-red">Not uploaded</span>
+          <input type="file" id="doc-file-${i}" style="font-size:11px;max-width:150px;" onchange="markDocUploaded(${i})">
+        </span>
+      </div>
+    `).join("");
+
+    document.getElementById("tok-gov-checklist").innerHTML = PREFLIGHT_GOVERNANCE.map((g, i) => `
+      <label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px;color:var(--grey);cursor:pointer;">
+        <input type="checkbox" id="gov-check-${i}"> ${g}
+      </label>
+    `).join("");
+
+    document.getElementById("tok-kyc-checklist").innerHTML = PREFLIGHT_KYC.map((k, i) => `
+      <label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px;color:var(--grey);cursor:pointer;">
+        <input type="checkbox" id="kyc-check-${i}"> ${k}
+      </label>
+    `).join("");
+  }
+  paintPreflight();
+
+  function markDocUploaded(i) {
+    const fileInput = document.getElementById(`doc-file-${i}`);
+    const status = document.getElementById(`doc-status-${i}`);
+    if (fileInput.files.length) {
+      status.textContent = "Uploaded ✓";
+      status.className = "tag tag-green";
+    }
+  }
+
+  function quickFillPreflight() {
+    PREFLIGHT_DOCS.forEach((_, i) => {
+      const status = document.getElementById(`doc-status-${i}`);
+      status.textContent = "Uploaded ✓";
+      status.className = "tag tag-green";
+    });
+    PREFLIGHT_GOVERNANCE.forEach((_, i) => { document.getElementById(`gov-check-${i}`).checked = true; });
+    PREFLIGHT_KYC.forEach((_, i) => { document.getElementById(`kyc-check-${i}`).checked = true; });
+    SVO2.showToast("Pre-flight checklist filled for demo purposes.");
+  }
+
+  function preflightComplete() {
+    const docsOk = PREFLIGHT_DOCS.every((_, i) => document.getElementById(`doc-status-${i}`).textContent.includes("Uploaded"));
+    const govOk = PREFLIGHT_GOVERNANCE.every((_, i) => document.getElementById(`gov-check-${i}`).checked);
+    const kycOk = PREFLIGHT_KYC.every((_, i) => document.getElementById(`kyc-check-${i}`).checked);
+    return docsOk && govOk && kycOk;
+  }
+
+  function runTokenisation() {
+    const project = document.getElementById("tok-project").value;
+    const volume = parseFloat(document.getElementById("tok-volume").value);
+    if (!volume || volume <= 0) { SVO2.showToast("Enter a verified credit volume."); return; }
+    if (!preflightComplete()) {
+      SVO2.showToast("Complete document upload, governance checks, and KYC requirements before tokenising.");
+      return;
+    }
+    const trustClass = PROJECT_TRUST_CLASS[project] || "Class II";
+
+    const condList = document.getElementById("tok-conditions");
+    condList.innerHTML = SVO2.mintConditions.map((c, i) =>
+      `<div id="cond-row-${i}" style="font-size:12.5px;color:var(--grey-light);padding:4px 0;">○ ${c}</div>`
+    ).join("");
+
+    const wrap = document.getElementById("tok-progress-wrap");
+    const fill = document.getElementById("tok-progress-fill");
+    const result = document.getElementById("tok-result");
+    result.style.display = "none";
+    wrap.style.display = "block";
+    fill.style.width = "0%";
+    let step = 0;
+    const totalSteps = SVO2.mintConditions.length;
+    const timer = setInterval(() => {
+      step += 1;
+      fill.style.width = Math.round((step / totalSteps) * 100) + "%";
+      const row = document.getElementById(`cond-row-${step - 1}`);
+      if (row) { row.style.color = "var(--primary)"; row.innerHTML = "● " + SVO2.mintConditions[step - 1] + " — satisfied"; }
+      if (step >= totalSteps) {
+        clearInterval(timer);
+        const tokenId = "SVO2-TKN-" + Math.floor(100000 + Math.random() * 900000);
+        document.getElementById("tok-result-body").innerHTML =
+          `Token ID: <strong>${tokenId}</strong><br>Project: ${project}<br>Trust Class: <strong>${trustClass}</strong>
+           <br>Volume tokenised: ${SVO2.fmt(volume)} tCO₂e
+           <br>Status: All mint authorisation conditions satisfied — registry-listed and live on SVX.`;
+        result.style.display = "block";
+        SVO2.showToast(`Tokenised ${SVO2.fmt(volume)} tCO₂e as ${tokenId}, ${trustClass} (simulated).`);
+
+        // Feed this freshly-tokenised batch straight into the live pipeline tracker at the
+        // "Tokenisation" stage, so the two cards on this page stay in sync.
+        SVO2.tokenisationQueue.unshift({
+          project: project, volume: volume, trustClass: trustClass, stage: 2,
+          updated: new Date().toISOString().slice(0, 10),
+        });
+        paintTokenisationQueue();
+      }
+    }, 420);
+  }
+</script>
+</body>
+</html>

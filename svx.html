@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SVX — Svantero Decentralised Carbon Exchange (MVP)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http://www.w3.org/2000/svg%22%20viewBox%3D%220%200%20120%20120%22%3E%3Crect%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22%230B3D2E%22/%3E%3Cg%20transform%3D%22translate(15,14.865)%22%20fill%3D%22%23C9A227%22%3E%3Cpath%20d%3D%22M5,51h23.677L45,79.271L61.322,51H85v-6H64.786l19.63-34H5.584l19.63,34H5V51z%20M45,68.368L34.972,51h20.055L45,68.368z%20%20%20M14.765,16h60.47L58.492,45H31.508L14.765,16z%22/%3E%3C/g%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header" id="site-header"></header>
+
+<div class="svx-shell">
+  <div class="svx-topbar">
+    <div class="svx-tabs" id="svx-tabs"></div>
+    <div class="svx-account-strip">
+      <div>Funds<b>$38,311.83</b></div>
+      <div>Profit/Loss<b id="acct-pnl">$0.00</b></div>
+      <div>Margin<b id="acct-margin">$0.00</b></div>
+      <div>Available<b id="acct-available">$38,311.83</b></div>
+      <div>Equity<b id="acct-equity">$38,311.83</b></div>
+    </div>
+  </div>
+
+  <div class="svx-body">
+    <aside class="svx-sidebar">
+      <input class="svx-search" placeholder="Search markets…">
+      <div class="svx-side-head">Watchlist — Tokenised Credits</div>
+      <div id="svx-watchlist"></div>
+      <div class="svx-side-head">Account</div>
+      <div class="svx-nav-item">Positions <span class="svx-badge" id="pos-count-badge">0</span></div>
+      <div class="svx-nav-item">Orders <span class="svx-badge" id="ord-count-badge">0</span></div>
+      <div class="svx-side-head">Settlement Currencies</div>
+      <div class="badge-list" style="margin-top:0;">
+        <span class="svx-badge">SVO₂</span><span class="svx-badge">USDT</span><span class="svx-badge">Digital Dirham</span>
+      </div>
+      <div class="svx-side-head">Disclaimer</div>
+      <div style="font-size:11px;color:var(--svx-text-dim);line-height:1.5;">
+        Illustrative MVP. All prices, order books, positions and P&amp;L are simulated mock data — no real
+        markets, funds, or blockchain are involved. Digital Dirham pricing uses the UAE's real fixed peg
+        (AED 3.6725 per USD) purely for illustrative conversion.
+      </div>
+    </aside>
+
+    <main class="svx-main" id="svx-main"></main>
+
+    <aside class="svx-feed">
+      <div class="svx-feed-tabs"><span class="active">Market News</span></div>
+      <div id="svx-news"></div>
+    </aside>
+  </div>
+</div>
+
+<div class="footer" style="background:var(--dark);color:#93aba3;">
+  SVX — Svantero's Decentralised Carbon Exchange, powered by SVO₂ — MVP · Illustrative demo, not connected to live markets or a real blockchain.
+</div>
+
+<script src="app.js"></script>
+<script>
+  SVO2.renderHeader("svx");
+
+  const svxState = {
+    tab: "spot",
+    selected: 0,
+    positions: [],
+    orders: [],
+    timeframe: "1H",
+    chartType: "candles",
+    quoteCurrency: "USDT",
+    optionQty: {},
+    selectedOptionIdx: 0,
+    selectedOptionSide: "buy",
+    futureQty: {},
+    tradeMode: "orderbook",   // "orderbook" | "swap"
+    swapDir: "quoteToBase",   // "quoteToBase" (buy) | "baseToQuote" (sell)
+    swapSlippage: 0.5,
+    pools: {},                // AMM reserve cache, keyed by `${instrumentIdx}_${quoteCcy}`
+  };
+
+  // Candle counts raised (and candle bodies narrowed in app.js) so the
+  // enlarged chart shows meaningfully more price history per timeframe.
+  const TIMEFRAMES = [
+    { key: "1m", label: "1m", count: 140, vol: 0.006 },
+    { key: "5m", label: "5m", count: 120, vol: 0.010 },
+    { key: "15m", label: "15m", count: 100, vol: 0.014 },
+    { key: "1H", label: "1H", count: 90, vol: 0.020 },
+    { key: "4H", label: "4H", count: 75, vol: 0.030 },
+    { key: "1D", label: "1D", count: 60, vol: 0.045 },
+  ];
+
+  function setTimeframe(key) { svxState.timeframe = key; renderMain(); }
+  function setChartType(type) { svxState.chartType = type; renderMain(); }
+  function setQuoteCurrency(key) { svxState.quoteCurrency = key; renderMain(); paintWatchlist(); }
+
+  function buildDepthBook(price, seed) {
+    const rng = SVO2.mulberry32(seed);
+    const bids = [], asks = [];
+    let bp = price - price * 0.0015, ap = price + price * 0.0015;
+    for (let i = 0; i < 6; i++) {
+      bids.push({ price: bp, size: Math.round(300 + rng() * 3000) });
+      bp -= price * 0.0015 * (1 + rng());
+      asks.push({ price: ap, size: Math.round(300 + rng() * 3000) });
+      ap += price * 0.0015 * (1 + rng());
+    }
+    return { bids, asks };
+  }
+
+  /* ===================== Liquidity Pool (constant-product AMM) swap ===================== */
+  function setTradeMode(mode) { svxState.tradeMode = mode; renderMain(); }
+  function flipSwapDirection() {
+    svxState.swapDir = svxState.swapDir === "quoteToBase" ? "baseToQuote" : "quoteToBase";
+    renderMain();
+  }
+  function setSwapSlippage(v) { svxState.swapSlippage = v; renderMain(); }
+
+  // Deterministic pool reserves per instrument/quote-currency pair, seeded so the
+  // implied pool price starts at the live instrument price. $600k–$2.4M depth.
+  function getPool(i, qc) {
+    const key = `${i}_${qc}`;
+    if (!svxState.pools[key]) {
+      const c = SVO2.creditTypes[i];
+      const rng = SVO2.mulberry32(5000 + i * 23 + qc.charCodeAt(0) * 7);
+      const tvlUsd = 600000 + rng() * 1800000;
+      const reserveBaseUsd = tvlUsd / 2;
+      svxState.pools[key] = {
+        reserveBase: reserveBaseUsd / c.price,
+        reserveQuote: SVO2.convertPrice(reserveBaseUsd, qc),
+      };
+    }
+    return svxState.pools[key];
+  }
+
+  // Standard constant-product (x*y=k) swap math, same formula Uniswap v2-style
+  // AMMs use: output shrinks as trade size grows relative to pool depth, which
+  // is what produces genuine (non-hardcoded) price impact.
+  function ammQuote(reserveIn, reserveOut, amountIn, feeBps = 30) {
+    const spotPrice = reserveOut / reserveIn;
+    if (!amountIn || amountIn <= 0) return { amountOut: 0, priceImpactPct: 0, executionPrice: 0, spotPrice };
+    const amountInWithFee = amountIn * (1 - feeBps / 10000);
+    const amountOut = (reserveOut * amountInWithFee) / (reserveIn + amountInWithFee);
+    const executionPrice = amountOut / amountIn;
+    const priceImpactPct = Math.max(0, 1 - executionPrice / spotPrice) * 100;
+    return { amountOut, priceImpactPct, executionPrice, spotPrice };
+  }
+
+  function currentSwapQuote() {
+    const c = SVO2.creditTypes[svxState.selected];
+    const qc = svxState.quoteCurrency;
+    const pool = getPool(svxState.selected, qc);
+    const amountIn = parseFloat(document.getElementById("swap-amount-in")?.value) || 0;
+    const dir = svxState.swapDir;
+    const reserveIn = dir === "quoteToBase" ? pool.reserveQuote : pool.reserveBase;
+    const reserveOut = dir === "quoteToBase" ? pool.reserveBase : pool.reserveQuote;
+    const q = ammQuote(reserveIn, reserveOut, amountIn);
+    return Object.assign(q, { pool, dir, amountIn, c, qc });
+  }
+
+  function updateSwapQuoteDisplay() {
+    const q = currentSwapQuote();
+    const qcLabel = q.qc === "SVO2" ? "SVO₂" : q.qc;
+    const outLbl = q.dir === "quoteToBase" ? q.c.ticker : qcLabel;
+    const outEl = document.getElementById("swap-amount-out");
+    const impactEl = document.getElementById("swap-impact");
+    if (outEl) outEl.textContent = SVO2.fmt(q.amountOut, q.dir === "quoteToBase" ? 3 : 2) + " " + outLbl;
+    if (impactEl) {
+      impactEl.textContent = q.priceImpactPct.toFixed(3) + "%";
+      impactEl.className = q.priceImpactPct > svxState.swapSlippage ? "impact-high" : "";
+    }
+  }
+
+  function executeSwap() {
+    const q = currentSwapQuote();
+    if (!q.amountIn || q.amountIn <= 0) { SVO2.showToast("Enter an amount to swap."); return; }
+    if (q.priceImpactPct > svxState.swapSlippage) {
+      SVO2.showToast(`Price impact ${q.priceImpactPct.toFixed(2)}% exceeds ${svxState.swapSlippage}% slippage tolerance — raise tolerance or reduce size.`);
+      return;
+    }
+    const pool = q.pool;
+    if (q.dir === "quoteToBase") { pool.reserveQuote += q.amountIn; pool.reserveBase -= q.amountOut; }
+    else { pool.reserveBase += q.amountIn; pool.reserveQuote -= q.amountOut; }
+
+    const qcLabel = q.qc === "SVO2" ? "SVO₂" : q.qc;
+    const inLbl = q.dir === "quoteToBase" ? qcLabel : q.c.ticker;
+    const outLbl = q.dir === "quoteToBase" ? q.c.ticker : qcLabel;
+    svxState.positions.push({
+      instrument: q.c.ticker, side: q.dir === "quoteToBase" ? "buy" : "sell", type: "AMM Swap",
+      size: q.dir === "quoteToBase" ? q.amountOut : q.amountIn, price: q.c.price,
+      detail: `Swapped ${SVO2.fmt(q.amountIn, 2)} ${inLbl} → ${SVO2.fmt(q.amountOut, 3)} ${outLbl} · ${q.priceImpactPct.toFixed(2)}% impact`,
+    });
+    refreshAccountStrip();
+    renderMain();
+    SVO2.showToast(`Swapped ${SVO2.fmt(q.amountIn, 2)} ${inLbl} → ${SVO2.fmt(q.amountOut, 3)} ${outLbl} via liquidity pool (simulated).`);
+  }
+
+  function renderSwapWidget(c, qc) {
+    const pool = getPool(svxState.selected, qc);
+    const dir = svxState.swapDir;
+    const qcLabel = qc === "SVO2" ? "SVO₂" : qc;
+    const payLabel = dir === "quoteToBase" ? qcLabel : c.ticker;
+    const receiveLabel = dir === "quoteToBase" ? c.ticker : qcLabel;
+    const spotPrice = pool.reserveQuote / pool.reserveBase;
+    const slippageOpts = [0.1, 0.5, 1.0];
+    return `
+      <h3>Liquidity Pool Swap <span class="svx-badge">${c.ticker}/${qcLabel}</span></h3>
+      <div class="svx-field">
+        <label>You pay</label>
+        <div style="display:flex;gap:6px;">
+          <input type="number" id="swap-amount-in" placeholder="0.00" min="0" oninput="updateSwapQuoteDisplay()" style="flex:1;">
+          <div style="min-width:58px;padding:6px 8px;border-radius:6px;border:1px solid var(--svx-border);background:var(--svx-bg);color:var(--svx-text-dim);font-size:11px;display:flex;align-items:center;justify-content:center;">${payLabel}</div>
+        </div>
+      </div>
+      <div class="svx-swap-flip" onclick="flipSwapDirection()" title="Flip direction">&#8645;</div>
+      <div class="svx-field">
+        <label>You receive (estimated)</label>
+        <div style="display:flex;gap:6px;">
+          <div class="swap-out-value" id="swap-amount-out" style="flex:1;">0.00</div>
+          <div style="min-width:58px;padding:6px 8px;border-radius:6px;border:1px solid var(--svx-border);background:var(--svx-bg);color:var(--svx-text-dim);font-size:11px;display:flex;align-items:center;justify-content:center;">${receiveLabel}</div>
+        </div>
+      </div>
+      <div class="svx-swap-meta">
+        <div>Pool reserves <span>${SVO2.fmt(pool.reserveBase, 1)} ${c.ticker} / ${SVO2.fmt(pool.reserveQuote, 0)} ${qcLabel}</span></div>
+        <div>Implied pool price <span>${SVO2.fmt(spotPrice, qc === "SVO2" ? 3 : 2)} ${qcLabel}</span></div>
+        <div>Price impact <span id="swap-impact">0.000%</span></div>
+        <div>Pool fee <span>0.30%</span></div>
+      </div>
+      <div class="svx-field">
+        <label>Slippage tolerance</label>
+        <div class="tv-btn-group" style="width:100%;">
+          ${slippageOpts.map(v => `<button style="flex:1;" class="${svxState.swapSlippage === v ? "active" : ""}" onclick="setSwapSlippage(${v})">${v}%</button>`).join("")}
+        </div>
+      </div>
+      <button class="btn btn-primary btn-block" onclick="executeSwap()">Swap Now via Liquidity Pool</button>
+      <p style="font-size:10.5px;color:var(--svx-text-dim);margin-top:8px;line-height:1.5;">
+        Instant execution against the on-chain ${c.ticker}/${qcLabel} pool — no order book, no counterparty
+        matching; price is set by the constant-product curve. Simulated AMM, illustrative only.
+      </p>`;
+  }
+
+  const TABS = [
+    { key: "spot", label: "Spot" },
+    { key: "derivatives", label: "Derivatives" },
+    { key: "staking", label: "Staking & Yield" },
+    { key: "risk", label: "Market Risk" },
+  ];
+
+  function paintTabs() {
+    document.getElementById("svx-tabs").innerHTML = TABS.map(t =>
+      `<div class="svx-tab ${t.key === svxState.tab ? "active" : ""}" onclick="setTab('${t.key}')">${t.label}</div>`
+    ).join("");
+  }
+  function setTab(key) { svxState.tab = key; paintTabs(); renderMain(); }
+
+  function paintWatchlist() {
+    const wrap = document.getElementById("svx-watchlist");
+    wrap.innerHTML = SVO2.creditTypes.map((c, i) => `
+      <div class="svx-watch-row ${i === svxState.selected ? "active" : ""}" onclick="selectInstrument(${i})">
+        <span class="nm">${c.ticker}</span>
+        <svg class="tv-watch-spark" width="46" height="20" id="spark-${i}"></svg>
+        <span class="px" id="wl-px-${i}"></span>
+      </div>`
+    ).join("");
+    SVO2.creditTypes.forEach((c, i) => {
+      const rng = SVO2.mulberry32(300 + i * 19);
+      const series = [];
+      let v = c.price * 0.95;
+      for (let k = 0; k < 16; k++) { v += (rng() - 0.47) * (c.price * 0.015); series.push(v); }
+      series.push(c.price);
+      SVO2.renderSparkline(document.getElementById(`spark-${i}`), series);
+      const chg = ((series[series.length - 1] - series[0]) / series[0]) * 100;
+      const up = chg >= 0;
+      document.getElementById(`wl-px-${i}`).innerHTML =
+        `<span>${SVO2.fmtQuote(c.price, svxState.quoteCurrency)}</span><span class="${up ? "svx-up" : "svx-down"}">${up ? "+" : ""}${chg.toFixed(2)}%</span>`;
+    });
+  }
+  function selectInstrument(i) { svxState.selected = i; if (svxState.tab === "spot") renderMain(); paintWatchlist(); }
+
+  function paintNews() {
+    document.getElementById("svx-news").innerHTML = SVO2.marketNews.map(n =>
+      `<div class="svx-news-item"><div class="src">${n.src}</div><div class="hl">${n.headline}</div></div>`
+    ).join("");
+  }
+
+  function bottomPanelHtml() {
+    const posRows = svxState.positions.length
+      ? svxState.positions.map(p => `<tr>
+          <td>${p.instrument}</td><td><span class="svx-badge ${p.side === "buy" ? "buy" : "sell"}">${p.side.toUpperCase()}</span></td>
+          <td>${p.type}</td><td>${SVO2.fmt(p.size)}</td><td>${SVO2.fmtQuote(p.price, svxState.quoteCurrency)}</td><td>${p.detail || "—"}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="6"><div class="svx-empty-state">You have no open positions.</div></td></tr>`;
+    return `
+      <div class="svx-panel">
+        <div class="svx-bottom-tabs"><span class="active">Positions (${svxState.positions.length})</span><span>Working Orders (${svxState.orders.length})</span></div>
+        <table class="svx-table">
+          <thead><tr><th>Instrument</th><th>Side</th><th>Type</th><th>Size</th><th>Price</th><th>Detail</th></tr></thead>
+          <tbody>${posRows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  function refreshAccountStrip() {
+    const margin = svxState.positions.reduce((s, p) => s + p.price * p.size * 0.1, 0);
+    document.getElementById("acct-margin").textContent = SVO2.fmtUsd(margin);
+    document.getElementById("acct-available").textContent = SVO2.fmtUsd(38311.83 - margin);
+    document.getElementById("pos-count-badge").textContent = svxState.positions.length;
+    document.getElementById("ord-count-badge").textContent = svxState.orders.length;
+  }
+
+  /* ===================== SPOT ===================== */
+  function renderSpot() {
+    const c = SVO2.creditTypes[svxState.selected];
+    const tf = TIMEFRAMES.find(t => t.key === svxState.timeframe);
+    const tfIdx = TIMEFRAMES.indexOf(tf);
+    const seed = 700 + svxState.selected * 13 + tfIdx * 31;
+    const candles = SVO2.generateOHLC(c.price, tf.count, seed, tf.vol);
+    const first = candles[0].open;
+    const last = candles[candles.length - 1].close;
+    const changePct = ((last - first) / first) * 100;
+    const up = changePct >= 0;
+    const dayHigh = Math.max(...candles.map(x => x.high));
+    const dayLow = Math.min(...candles.map(x => x.low));
+    const volSum = candles.reduce((s, x) => s + x.volume, 0);
+
+    const depth = buildDepthBook(c.price, 900 + svxState.selected * 7);
+    const maxSize = Math.max(...depth.bids.map(b => b.size), ...depth.asks.map(a => a.size));
+    const bestBid = depth.bids[0].price, bestAsk = depth.asks[0].price;
+    const spread = bestAsk - bestBid;
+
+    const qc = svxState.quoteCurrency;
+
+    return `
+      <div class="svx-panel">
+        <div class="tv-ticker">
+          <span class="pair">${c.ticker} / ${qc === "SVO2" ? "SVO₂" : qc}</span>
+          <span class="last-price ${up ? "up" : "down"}">${SVO2.fmtQuote(last, qc)}</span>
+          <span class="chg-badge ${up ? "up" : "down"}">${up ? "+" : ""}${changePct.toFixed(2)}%</span>
+          <span class="stat">${tf.label} High<b>${SVO2.fmtQuote(dayHigh, qc)}</b></span>
+          <span class="stat">${tf.label} Low<b>${SVO2.fmtQuote(dayLow, qc)}</b></span>
+          <span class="stat">${tf.label} Volume<b>${SVO2.fmt(Math.round(volSum))} units</b></span>
+          <span class="svx-badge">${c.trustClass}</span>
+        </div>
+
+        <div class="tv-toolbar">
+          <div class="tv-btn-group">
+            ${TIMEFRAMES.map(t => `<button class="${t.key === svxState.timeframe ? "active" : ""}" onclick="setTimeframe('${t.key}')">${t.label}</button>`).join("")}
+          </div>
+          <div class="tv-btn-group">
+            <button class="${svxState.chartType === "candles" ? "active" : ""}" onclick="setChartType('candles')">Candles</button>
+            <button class="${svxState.chartType === "line" ? "active" : ""}" onclick="setChartType('line')">Line</button>
+          </div>
+          <div class="tv-btn-group">
+            ${SVO2.quoteCurrencies.map(q => `<button class="${q.key === qc ? "active" : ""}" onclick="setQuoteCurrency('${q.key}')">${q.label}</button>`).join("")}
+          </div>
+        </div>
+
+        <div class="svx-grid-trade">
+          <div class="tv-chart-wrap" id="candle-chart-wrap"></div>
+
+          <div class="svx-trade-col">
+            <div class="tv-btn-group svx-mode-toggle">
+              <button class="${svxState.tradeMode === "orderbook" ? "active" : ""}" onclick="setTradeMode('orderbook')">Order Book</button>
+              <button class="${svxState.tradeMode === "swap" ? "active" : ""}" onclick="setTradeMode('swap')">Liquidity Pool Swap</button>
+            </div>
+
+            ${svxState.tradeMode === "orderbook" ? `
+              <h3 style="margin-bottom:8px;">Order Book <span style="color:var(--svx-text-dim);font-weight:400;">(${qc === "SVO2" ? "SVO₂" : qc})</span></h3>
+              ${depth.asks.slice().reverse().map(a => `
+                <div class="tv-depth-row"><div class="tv-depth-bar ask" style="width:${((a.size / maxSize) * 100).toFixed(0)}%;"></div>
+                  <span class="p ask">${SVO2.fmt(SVO2.convertPrice(a.price, qc), qc === "SVO2" ? 3 : 2)}</span><span>${SVO2.fmt(a.size)}</span></div>
+              `).join("")}
+              <div class="tv-spread-row">Spread ${SVO2.fmtQuote(spread, qc)} (${((spread / c.price) * 100).toFixed(2)}%)</div>
+              ${depth.bids.map(b => `
+                <div class="tv-depth-row"><div class="tv-depth-bar bid" style="width:${((b.size / maxSize) * 100).toFixed(0)}%;"></div>
+                  <span class="p bid">${SVO2.fmt(SVO2.convertPrice(b.price, qc), qc === "SVO2" ? 3 : 2)}</span><span>${SVO2.fmt(b.size)}</span></div>
+              `).join("")}
+
+              <div class="svx-deal-btns" style="margin-top:10px;">
+                <div class="svx-deal-btn sell"><div class="lbl">Sell</div><div class="prc">${SVO2.fmtQuote(bestBid, qc)}</div></div>
+                <div class="svx-deal-btn buy"><div class="lbl">Buy</div><div class="prc">${SVO2.fmtQuote(bestAsk, qc)}</div></div>
+              </div>
+              <div class="svx-field"><label>Size (units)</label><input type="number" id="spot-size" placeholder="e.g. 250" min="0"></div>
+              <div class="svx-field"><label>Stop (optional)</label><input type="number" id="spot-stop" placeholder="pts away"></div>
+              <div class="svx-field"><label>Limit (optional)</label><input type="number" id="spot-limit" placeholder="pts away"></div>
+              <div class="btn-row">
+                <button class="btn btn-sell btn-block" onclick="placeSpotDeal('sell', ${bestBid})">Sell</button>
+                <button class="btn btn-buy btn-block" onclick="placeSpotDeal('buy', ${bestAsk})">Buy</button>
+              </div>
+              <p style="font-size:10.5px;color:var(--svx-text-dim);margin-top:8px;">
+                Settles in ${qc === "SVO2" ? "SVO₂" : qc === "DAED" ? "Digital Dirham (UAE CBDC)" : "USDT"}.
+                Digital Dirham uses the UAE's fixed peg of ${SVO2.AED_PER_USD} AED per USD.
+              </p>
+            ` : renderSwapWidget(c, qc)}
+          </div>
+        </div>
+      </div>
+      ${bottomPanelHtml()}
+    `;
+  }
+
+  function placeSpotDeal(side, price) {
+    const size = parseFloat(document.getElementById("spot-size").value);
+    if (!size || size <= 0) { SVO2.showToast("Enter a size."); return; }
+    const c = SVO2.creditTypes[svxState.selected];
+    svxState.positions.push({ instrument: c.ticker, side, type: "Spot", size, price, detail: "—" });
+    refreshAccountStrip();
+    renderMain();
+    SVO2.showToast(`${side.toUpperCase()} ${SVO2.fmt(size)} ${c.ticker} @ ${SVO2.fmtQuote(price, svxState.quoteCurrency)} filled (simulated).`);
+  }
+
+  /* ===================== DERIVATIVES ===================== */
+  function renderDerivatives() {
+    return `
+      <div class="svx-panel">
+        <h3>Futures</h3>
+        <table class="svx-table">
+          <thead><tr><th>Contract</th><th>Underlying</th><th>Expiry</th><th>Mark</th><th>Basis</th><th>Open Interest</th><th>Funding</th><th>Contracts</th><th>Trade</th></tr></thead>
+          <tbody>
+            ${SVO2.futuresContracts.map((f, i) => `<tr>
+              <td>${f.contract}</td><td>${f.underlying}</td><td>${f.expiry}</td><td>${SVO2.fmtUsd(f.mark)}</td>
+              <td class="svx-up">${f.basis}</td><td>${SVO2.fmt(f.oi)}</td><td>${f.funding}</td>
+              <td>
+                <input type="number" min="1" value="${getFutureQty(i)}" onchange="setFutureQty(${i}, this.value)"
+                  style="width:56px;padding:4px 6px;font-size:11px;background:var(--svx-bg);color:var(--svx-text);
+                  border:1px solid var(--svx-border);border-radius:5px;font-family:inherit;">
+              </td>
+              <td style="white-space:nowrap;">
+                <button class="btn btn-buy" style="padding:5px 9px;font-size:11px;" onclick="tradeFuture(${i},'buy')">Buy ${getFutureQty(i)}</button>
+                <button class="btn btn-sell" style="padding:5px 9px;font-size:11px;" onclick="tradeFuture(${i},'sell')">Sell ${getFutureQty(i)}</button>
+              </td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+      <div class="svx-panel">
+        <h3>Options Chain</h3>
+        <table class="svx-table">
+          <thead><tr><th>Underlying</th><th>Strike</th><th>Type</th><th>Premium</th><th>Expiry</th><th>Delta</th><th>Contracts</th><th>Trade</th></tr></thead>
+          <tbody>
+            ${SVO2.optionsChain.map((o, i) => `<tr onclick="selectOption(${i})" style="cursor:pointer;${i === svxState.selectedOptionIdx ? "background:rgba(201,162,39,0.06);" : ""}">
+              <td>${o.underlying}</td><td>${SVO2.fmtUsd(o.strike)}</td>
+              <td><span class="svx-badge ${o.type === "Call" ? "buy" : "sell"}">${o.type}</span></td>
+              <td>${SVO2.fmtUsd(o.premium)}</td><td>${o.expiry}</td><td>${o.delta.toFixed(2)}</td>
+              <td onclick="event.stopPropagation()">
+                <input type="number" min="1" value="${getOptionQty(i)}" onchange="setOptionQty(${i}, this.value)"
+                  style="width:56px;padding:4px 6px;font-size:11px;background:var(--svx-bg);color:var(--svx-text);
+                  border:1px solid var(--svx-border);border-radius:5px;font-family:inherit;">
+              </td>
+              <td style="white-space:nowrap;" onclick="event.stopPropagation()">
+                <button class="btn btn-buy" style="padding:5px 9px;font-size:11px;" onclick="tradeOption(${i},'buy')">Buy ${getOptionQty(i)}</button>
+                <button class="btn btn-sell" style="padding:5px 9px;font-size:11px;" onclick="tradeOption(${i},'sell')">Sell ${getOptionQty(i)}</button>
+              </td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+        <p style="font-size:11.5px;color:var(--svx-text-dim);margin-top:10px;">
+          Futures and options settle against tokenised carbon credit reference prices. Leverage and premium
+          mechanics shown here are illustrative only. Click a row, or Buy/Sell, to load its breakeven analysis below.
+        </p>
+      </div>
+
+      <div class="svx-panel">
+        <h3>Options Strategy-Builder</h3>
+        <div id="option-payoff-summary" style="margin-bottom:8px;font-size:12.5px;color:var(--svx-text-dim);"></div>
+        <div id="option-payoff-chart"></div>
+      </div>
+      ${bottomPanelHtml()}
+    `;
+  }
+
+  function getOptionQty(i) { return svxState.optionQty[i] ?? 10; }
+  function setOptionQty(i, v) { svxState.optionQty[i] = Math.max(1, parseFloat(v) || 10); renderMain(); }
+  function selectOption(i) { svxState.selectedOptionIdx = i; renderMain(); }
+
+  function getFutureQty(i) { return svxState.futureQty[i] ?? 100; }
+  function setFutureQty(i, v) { svxState.futureQty[i] = Math.max(1, parseFloat(v) || 100); renderMain(); }
+
+  function tradeFuture(i, side) {
+    const f = SVO2.futuresContracts[i];
+    const qty = getFutureQty(i);
+    svxState.positions.push({ instrument: f.contract, side, type: "Future", size: qty, price: f.mark, detail: "Expiry " + f.expiry });
+    refreshAccountStrip(); renderMain();
+    SVO2.showToast(`${side === "buy" ? "Opened long" : "Opened short"} ${SVO2.fmt(qty)} × ${f.contract} @ ${SVO2.fmtUsd(f.mark)} (simulated).`);
+  }
+  function tradeOption(i, side) {
+    const o = SVO2.optionsChain[i];
+    const qty = getOptionQty(i);
+    svxState.selectedOptionIdx = i;
+    svxState.selectedOptionSide = side;
+    svxState.positions.push({
+      instrument: `${o.underlying} ${o.strike} ${o.type}`, side, type: "Option",
+      size: qty, price: o.premium, detail: `Δ ${o.delta.toFixed(2)} · Strike ${o.strike.toFixed(2)}`,
+    });
+    refreshAccountStrip();
+    renderMain();
+    SVO2.showToast(`${side === "buy" ? "Bought" : "Sold"} ${SVO2.fmt(qty)} × ${o.type} @ strike ${SVO2.fmtUsd(o.strike)} (simulated).`);
+  }
+
+  /* ===================== STAKING & YIELD FARMING ===================== */
+  function renderStaking() {
+    return `
+      <div class="grid grid-3" style="margin-bottom:14px;">
+        ${SVO2.stakingPools.map((p, i) => `
+          <div class="svx-pool-card">
+            <h4>${p.name}</h4>
+            <div class="apy">${p.apy}% APY</div>
+            <p style="font-size:12px;color:var(--svx-text-dim);margin:8px 0;">${p.desc}</p>
+            <p style="font-size:11.5px;color:var(--svx-text-dim);">TVL: ${SVO2.fmtUsd(p.tvl)} · Lockup: ${p.lockup}</p>
+            <div class="svx-field" style="margin-top:10px;"><input type="number" id="stake-pool-${i}" placeholder="Amount to stake"></div>
+            <button class="btn btn-primary btn-block" onclick="stakeInPool(${i})">Stake</button>
+          </div>
+        `).join("")}
+      </div>
+      <div class="svx-panel">
+        <h3>Your Staked Positions</h3>
+        <table class="svx-table">
+          <thead><tr><th>Pool</th><th>Amount</th><th>APY</th><th>Est. Annual Yield</th></tr></thead>
+          <tbody id="staked-positions-body">
+            <tr><td colspan="4"><div class="svx-empty-state">No active staking positions yet — stake into a pool above.</div></td></tr>
+          </tbody>
+        </table>
+        <p style="font-size:11.5px;color:var(--svx-text-dim);margin-top:10px;">
+          Yield-farming stakes are separate from the Operator and Verifier bonds used in the Governance &amp;
+          Trust Layer (see the Tokenisation Engine page) — staking here earns platform yield, while governance
+          bonds secure project integrity and are subject to slashing on misrepresentation.
+        </p>
+      </div>
+    `;
+  }
+  const stakedPositions = [];
+  function stakeInPool(i) {
+    const amt = parseFloat(document.getElementById(`stake-pool-${i}`).value);
+    if (!amt || amt <= 0) { SVO2.showToast("Enter an amount to stake."); return; }
+    const p = SVO2.stakingPools[i];
+    stakedPositions.push({ pool: p.name, amount: amt, apy: p.apy });
+    document.getElementById("staked-positions-body").innerHTML = stakedPositions.map(s =>
+      `<tr><td>${s.pool}</td><td>${SVO2.fmt(s.amount)}</td><td>${s.apy}%</td><td>${SVO2.fmtUsd(s.amount * s.apy / 100)}</td></tr>`
+    ).join("");
+    SVO2.showToast(`Staked ${SVO2.fmt(amt)} into ${p.name} (simulated).`);
+  }
+
+  /* ===================== MARKET RISK ===================== */
+  function renderRisk() {
+    const m = SVO2.performanceMetrics;
+    const analysis = SVO2.computeBetaAnalysis();
+    const beta = analysis.portfolioBeta;
+    const label = beta < 0.8 ? "Defensive" : beta <= 1.2 ? "Market-Aligned" : "Aggressive";
+    const sorted = [...analysis.rows].sort((a, b) => b.beta - a.beta);
+    const highest = sorted[0], lowest = sorted[sorted.length - 1];
+
+    return `
+      <div class="grid grid-3" style="margin-bottom:14px;">
+        <div class="svx-stat-tile"><div class="lbl">Win Rate</div><div class="val">${(m.winRate * 100).toFixed(0)}%</div></div>
+        <div class="svx-stat-tile"><div class="lbl">Realised P&amp;L</div><div class="val">${SVO2.fmtUsd(m.realisedPnl)}</div></div>
+        <div class="svx-stat-tile"><div class="lbl">Sharpe Ratio</div><div class="val">${m.sharpe.toFixed(2)}</div></div>
+        <div class="svx-stat-tile"><div class="lbl">Max Drawdown</div><div class="val svx-down">${(m.maxDrawdown * 100).toFixed(1)}%</div></div>
+        <div class="svx-stat-tile"><div class="lbl">Avg. Hold Period</div><div class="val">${m.avgHoldDays.toFixed(1)} days</div></div>
+        <div class="svx-stat-tile"><div class="lbl">Total Trades</div><div class="val">${m.trades}</div></div>
+      </div>
+
+      <div class="svx-panel">
+        <h3>Portfolio Beta Coefficient</h3>
+        <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:12px;">
+          <div class="svx-stat-tile" style="min-width:160px;">
+            <div class="lbl">Portfolio Beta (vs. Carbon Market Index)</div>
+            <div class="val">${beta.toFixed(2)} <span class="svx-badge" style="margin-left:6px;">${label}</span></div>
+          </div>
+          <p style="font-size:12px;color:var(--svx-text-dim);max-width:420px;">
+            Beta measures how much your portfolio moves relative to the broader tokenised carbon credit market.
+            Beta ≈ 1 tracks the market; below 1 is more defensive; above 1 amplifies market moves. Calculated
+            from a 90-day simulated return series via covariance ÷ index variance.
+          </p>
+        </div>
+        <table class="svx-table">
+          <thead><tr><th>Asset</th><th>Portfolio Weight</th><th>Beta</th><th>Contribution to Portfolio Beta</th></tr></thead>
+          <tbody>
+            ${sorted.map(r => `<tr>
+              <td>${r.type}</td><td>${(r.weight * 100).toFixed(1)}%</td>
+              <td class="${r.beta >= 1 ? "svx-up" : "svx-down"}">${r.beta.toFixed(2)}</td>
+              <td>${r.contribution.toFixed(3)}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+        <p style="font-size:12px;color:var(--svx-text-dim);margin-top:12px;">
+          Diversification note: <strong>${highest.type}</strong> contributes the most market risk (beta
+          ${highest.beta.toFixed(2)}), while <strong>${lowest.type}</strong> is the most defensive (beta
+          ${lowest.beta.toFixed(2)}). Shifting weight from the former toward the latter would lower overall
+          portfolio beta and reduce sensitivity to broad carbon market swings.
+        </p>
+      </div>
+    `;
+  }
+
+  function renderMain() {
+    const el = document.getElementById("svx-main");
+    if (svxState.tab === "spot") el.innerHTML = renderSpot();
+    else if (svxState.tab === "derivatives") el.innerHTML = renderDerivatives();
+    else if (svxState.tab === "staking") el.innerHTML = renderStaking();
+    else if (svxState.tab === "risk") el.innerHTML = renderRisk();
+    refreshAccountStrip();
+
+    if (svxState.tab === "spot") {
+      const c = SVO2.creditTypes[svxState.selected];
+      const tf = TIMEFRAMES.find(t => t.key === svxState.timeframe);
+      const tfIdx = TIMEFRAMES.indexOf(tf);
+      const seed = 700 + svxState.selected * 13 + tfIdx * 31;
+      const candlesUsd = SVO2.generateOHLC(c.price, tf.count, seed, tf.vol);
+      const qc = svxState.quoteCurrency;
+      const candles = candlesUsd.map(x => ({
+        open: SVO2.convertPrice(x.open, qc), high: SVO2.convertPrice(x.high, qc),
+        low: SVO2.convertPrice(x.low, qc), close: SVO2.convertPrice(x.close, qc), volume: x.volume,
+      }));
+      const wrap = document.getElementById("candle-chart-wrap");
+      if (!wrap.id) wrap.id = "candle-chart-wrap";
+
+      if (svxState.chartType === "candles") {
+        SVO2.renderCandleChart(wrap, candles, { w: 1040, h: 440 });
+      } else {
+        wrap.innerHTML = `<svg width="100%" height="440" viewBox="0 0 1040 440" id="spot-line-chart"></svg>`;
+        SVO2.renderLine(document.getElementById("spot-line-chart"), candles.map(x => x.close), { w: 1040, h: 440 });
+        wrap.querySelectorAll("polyline,polygon").forEach(node => {
+          if (node.tagName === "polyline") node.setAttribute("stroke", "#C9A227");
+          if (node.tagName === "polygon") node.setAttribute("fill", "#C9A227");
+        });
+      }
+    }
+
+    if (svxState.tab === "derivatives") {
+      const idx = Math.min(svxState.selectedOptionIdx, SVO2.optionsChain.length - 1);
+      const opt = SVO2.optionsChain[idx];
+      const side = svxState.selectedOptionSide || "buy";
+      const qty = getOptionQty(idx);
+      const chartEl = document.getElementById("option-payoff-chart");
+      const stats = SVO2.renderOptionPayoff(chartEl, opt, side, qty);
+      const fmtPnl = v => (v === Infinity ? "Unlimited" : v === -Infinity ? "Unlimited" : SVO2.fmtUsd(Math.abs(v)));
+      document.getElementById("option-payoff-summary").innerHTML =
+        `<strong>${side === "buy" ? "Long" : "Short"} ${SVO2.fmt(qty)} × ${opt.underlying} ${opt.strike.toFixed(2)} ${opt.type}</strong> (exp ${opt.expiry}) —
+         Breakeven <strong>${stats.breakeven.toFixed(2)}</strong> ·
+         Max Profit <span class="svx-up">${fmtPnl(stats.maxProfit)}</span> ·
+         Max Loss <span class="svx-down">${fmtPnl(stats.maxLoss)}</span>`;
+    }
+  }
+
+  paintTabs();
+  paintWatchlist();
+  paintNews();
+  renderMain();
+</script>
+</body>
+</html>

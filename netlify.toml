@@ -1,0 +1,13 @@
+[build]
+  publish = "."
+  command = ""
+
+[[redirects]]
+  from = "/exchange"
+  to = "/svx.html"
+  status = 301
+
+[[redirects]]
+  from = "/exchange.html"
+  to = "/svx.html"
+  status = 301
