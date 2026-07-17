@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>SVX — Svantero Decentralised Carbon Exchange (MVP)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http://www.w3.org/2000/svg%22%20viewBox%3D%220%200%20120%20120%22%3E%3Crect%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22%230B3D2E%22/%3E%3Cg%20transform%3D%22translate(15,14.865)%22%20fill%3D%22%23C9A227%22%3E%3Cpath%20d%3D%22M5,51h23.677L45,79.271L61.322,51H85v-6H64.786l19.63-34H5.584l19.63,34H5V51z%20M45,68.368L34.972,51h20.055L45,68.368z%20%20%20M14.765,16h60.47L58.492,45H31.508L14.765,16z%22/%3E%3C/g%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http://www.w3.org/2000/svg%22%20viewBox%3D%220%200%20120%20120%22%3E%3Crect%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22%23282e35%22/%3E%3Cg%20transform%3D%22translate(15,14.865)%22%20fill%3D%22%23C9A227%22%3E%3Cpath%20d%3D%22M5,51h23.677L45,79.271L61.322,51H85v-6H64.786l19.63-34H5.584l19.63,34H5V51z%20M45,68.368L34.972,51h20.055L45,68.368z%20%20%20M14.765,16h60.47L58.492,45H31.508L14.765,16z%22/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -52,7 +52,7 @@
   </div>
 </div>
 
-<div class="footer" style="background:var(--dark);color:#93aba3;">
+<div class="footer" style="background:var(--dark);color:#8b93a0;">
   SVX — Svantero's Decentralised Carbon Exchange, powered by SVO₂ — MVP · Illustrative demo, not connected to live markets or a real blockchain.
 </div>
 
@@ -76,6 +76,23 @@
     swapDir: "quoteToBase",   // "quoteToBase" (buy) | "baseToQuote" (sell)
     swapSlippage: 0.5,
     pools: {},                // AMM reserve cache, keyed by `${instrumentIdx}_${quoteCcy}`
+
+    // ---- Institutional desk ----
+    orderType: "market",
+    lastRiskResult: null,
+    execLog: [],
+    sviSection: "risk",
+    subAccounts: [
+      { id: "main", name: "Main Trading Desk", equity: 38311.83, maxOrderSize: 5000, maxDrawdown: 15, allocPct: 60 },
+      { id: "mm", name: "Market-Making Desk", equity: 21500.00, maxOrderSize: 12000, maxDrawdown: 8, allocPct: 25 },
+      { id: "quant", name: "Quant Strategies", equity: 9600.00, maxOrderSize: 3000, maxDrawdown: 20, allocPct: 15 },
+    ],
+    activeSubAccount: "main",
+    l3Interval: null,
+    l3Running: false,
+    fixSeq: 1,
+    stpNetted: 128,
+    stpRate: 99.4,
   };
 
   // Candle counts raised (and candle bodies narrowed in app.js) so the
@@ -242,6 +259,7 @@
     { key: "derivatives", label: "Derivatives" },
     { key: "staking", label: "Staking & Yield" },
     { key: "risk", label: "Market Risk" },
+    { key: "institutional", label: "Institutional" },
   ];
 
   function paintTabs() {
@@ -249,7 +267,12 @@
       `<div class="svx-tab ${t.key === svxState.tab ? "active" : ""}" onclick="setTab('${t.key}')">${t.label}</div>`
     ).join("");
   }
-  function setTab(key) { svxState.tab = key; paintTabs(); renderMain(); }
+  function setTab(key) {
+    if (svxState.tab === "institutional" && key !== "institutional") stopL3Feed();
+    svxState.tab = key;
+    paintTabs();
+    renderMain();
+  }
 
   function paintWatchlist() {
     const wrap = document.getElementById("svx-watchlist");
@@ -378,6 +401,14 @@
                 <div class="svx-deal-btn sell"><div class="lbl">Sell</div><div class="prc">${SVO2.fmtQuote(bestBid, qc)}</div></div>
                 <div class="svx-deal-btn buy"><div class="lbl">Buy</div><div class="prc">${SVO2.fmtQuote(bestAsk, qc)}</div></div>
               </div>
+              <div class="svi-field svi-otype-field">
+                <label>Order Type</label>
+                <select id="svi-order-type" onchange="onOrderTypeChange(this.value)">
+                  ${Object.entries(ORDER_TYPES).map(([k, v]) => `<option value="${k}" ${svxState.orderType === k ? "selected" : ""}>${v.label}</option>`).join("")}
+                </select>
+              </div>
+              <div class="svi-otype-desc" id="svi-otype-desc">${ORDER_TYPES[svxState.orderType].desc}</div>
+              <div id="svi-otype-extra">${orderTypeExtraHtml(svxState.orderType)}</div>
               <div class="svx-field"><label>Size (units)</label><input type="number" id="spot-size" placeholder="e.g. 250" min="0"></div>
               <div class="svx-field"><label>Stop (optional)</label><input type="number" id="spot-stop" placeholder="pts away"></div>
               <div class="svx-field"><label>Limit (optional)</label><input type="number" id="spot-limit" placeholder="pts away"></div>
@@ -385,6 +416,11 @@
                 <button class="btn btn-sell btn-block" onclick="placeSpotDeal('sell', ${bestBid})">Sell</button>
                 <button class="btn btn-buy btn-block" onclick="placeSpotDeal('buy', ${bestAsk})">Buy</button>
               </div>
+              <div class="svi-risk-panel" id="svi-risk-panel">
+                <div class="svi-risk-title"><span>Pre-Trade Risk Check</span><span id="svi-risk-verdict" class="svi-chip ${svxState.lastRiskResult ? (svxState.lastRiskResult.passed ? "ok" : "bad") : "neutral"}">${svxState.lastRiskResult ? (svxState.lastRiskResult.passed ? "Pass" : "Blocked") : "Idle"}</span></div>
+                <div id="svi-risk-lines">${svxState.lastRiskResult ? riskLinesHtml(svxState.lastRiskResult) : ""}</div>
+              </div>
+              <div class="svi-exec-log" id="svi-exec-log">${svxState.execLog.map(e => `<div class="svi-exec-line">${e}</div>`).join("")}</div>
               <p style="font-size:10.5px;color:var(--svx-text-dim);margin-top:8px;">
                 Settles in ${qc === "SVO2" ? "SVO₂" : qc === "DAED" ? "Digital Dirham (UAE CBDC)" : "USDT"}.
                 Digital Dirham uses the UAE's fixed peg of ${SVO2.AED_PER_USD} AED per USD.
@@ -401,10 +437,182 @@
     const size = parseFloat(document.getElementById("spot-size").value);
     if (!size || size <= 0) { SVO2.showToast("Enter a size."); return; }
     const c = SVO2.creditTypes[svxState.selected];
-    svxState.positions.push({ instrument: c.ticker, side, type: "Spot", size, price, detail: "—" });
+    const type = svxState.orderType;
+    const stop = parseFloat(document.getElementById("spot-stop")?.value) || 0;
+    const limit = parseFloat(document.getElementById("spot-limit")?.value) || 0;
+
+    const result = runRiskChecks(size, limit || stop, price);
+    svxState.lastRiskResult = result;
+    const verdictEl = document.getElementById("svi-risk-verdict");
+    if (verdictEl) {
+      verdictEl.textContent = result.passed ? "Pass" : "Blocked";
+      verdictEl.className = "svi-chip " + (result.passed ? "ok" : "bad");
+    }
+    const linesEl = document.getElementById("svi-risk-lines");
+    if (linesEl) linesEl.innerHTML = riskLinesHtml(result);
+
+    if (!result.passed) {
+      SVO2.showToast(`Order blocked by pre-trade risk check (${ORDER_TYPES[type].label}).`);
+      logExec(`<b>${ORDER_TYPES[type].label}</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — <span style="color:var(--svx-sell)">blocked by pre-trade risk check</span>`);
+      return;
+    }
+
+    const id = uid();
+    simulateOrderType(type, side, price, size, id);
+    svxState.positions.push({ instrument: c.ticker, side, type: ORDER_TYPES[type].label, size, price, detail: `Order ${id}` });
     refreshAccountStrip();
     renderMain();
     SVO2.showToast(`${side.toUpperCase()} ${SVO2.fmt(size)} ${c.ticker} @ ${SVO2.fmtQuote(price, svxState.quoteCurrency)} filled (simulated).`);
+  }
+
+  /* ===================== INSTITUTIONAL — order-type & risk-check engine ===================== */
+  const ORDER_TYPES = {
+    market: { label: "Market", desc: "Executes immediately at the best available price." },
+    limit: { label: "Limit", desc: "Rests on the book until it trades at your limit price or better." },
+    stop: { label: "Stop", desc: "Becomes a market order once the stop trigger price is reached." },
+    twap: { label: "TWAP", desc: "Time-Weighted Average Price — slices the order into equal pieces executed evenly over the duration you set, to minimise market impact." },
+    vwap: { label: "VWAP", desc: "Volume-Weighted Average Price — paces execution against observed trading volume, capped at your participation rate." },
+    iceberg: { label: "Iceberg", desc: "Only the display size is shown on the public book; the remainder refills automatically as each visible slice fills." },
+    post_only: { label: "Post-Only", desc: "Added to the book as a maker only — cancelled instead of taking liquidity if it would cross the spread." },
+    fok: { label: "Fill-or-Kill", desc: "Fills the entire size immediately, or the whole order is cancelled — no partial fills." },
+    ioc: { label: "Immediate-or-Cancel", desc: "Fills whatever is immediately available; any unfilled remainder is cancelled at once." },
+  };
+
+  function money(n, d = 2) { return "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  function pad2(n) { return String(n).padStart(2, "0"); }
+  function nowStr() { const d = new Date(); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; }
+  function rand(min, max) { return Math.random() * (max - min) + min; }
+  function uid() { return "ORD-" + Math.random().toString(36).slice(2, 8).toUpperCase(); }
+  function activeSub() { return svxState.subAccounts.find(s => s.id === svxState.activeSubAccount) || svxState.subAccounts[0]; }
+
+  function onOrderTypeChange(type) {
+    svxState.orderType = type;
+    const descEl = document.getElementById("svi-otype-desc");
+    if (descEl) descEl.textContent = ORDER_TYPES[type].desc;
+    const extraEl = document.getElementById("svi-otype-extra");
+    if (extraEl) extraEl.innerHTML = orderTypeExtraHtml(type);
+  }
+
+  function orderTypeExtraHtml(type) {
+    if (type === "twap") return `<div class="svi-inline-fields">
+        <div class="svi-field"><label>Duration (min)</label><input type="number" id="svi-twap-duration" value="30" min="1"></div>
+        <div class="svi-field"><label>Slices</label><input type="number" id="svi-twap-slices" value="6" min="2" max="50"></div>
+      </div>`;
+    if (type === "vwap") return `<div class="svi-inline-fields">
+        <div class="svi-field"><label>Duration (min)</label><input type="number" id="svi-vwap-duration" value="45" min="1"></div>
+        <div class="svi-field"><label>Max Participation %</label><input type="number" id="svi-vwap-participation" value="12" min="1" max="100"></div>
+      </div>`;
+    if (type === "iceberg") return `<div class="svi-field"><label>Display Size (visible units)</label><input type="number" id="svi-iceberg-display" value="50" min="1"></div>`;
+    if (type === "post_only") return `<p class="svi-hint" style="margin:-4px 0 10px;">Rejected instead of matched if it would immediately take liquidity.</p>`;
+    if (type === "fok") return `<p class="svi-hint" style="margin:-4px 0 10px;">No partial fills — all or nothing, instantly.</p>`;
+    if (type === "ioc") return `<p class="svi-hint" style="margin:-4px 0 10px;">Fills what it can immediately; the rest is cancelled.</p>`;
+    return "";
+  }
+
+  function runRiskChecks(size, limitOrStop, refPrice) {
+    const sub = activeSub();
+    const checks = [];
+
+    const fatFinger = size > 5000;
+    checks.push({ label: "Fat-finger screen", pass: !fatFinger,
+      detail: fatFinger ? `Size ${SVO2.fmt(size)} units is unusually large for this instrument` : "Order size within normal range" });
+
+    let collarBreach = false;
+    if (limitOrStop && limitOrStop > 0) {
+      const pct = Math.abs(limitOrStop - refPrice) / refPrice * 100;
+      collarBreach = pct > 10;
+      checks.push({ label: "Price collar (±10%)", pass: !collarBreach,
+        detail: collarBreach ? `${pct.toFixed(1)}% away from last traded price ${SVO2.fmt(refPrice, 2)}` : `${pct.toFixed(1)}% from last traded price` });
+    } else {
+      checks.push({ label: "Price collar (±10%)", pass: true, detail: "No limit/stop price set — market reference used" });
+    }
+
+    const maxSizeBreach = size > sub.maxOrderSize;
+    checks.push({ label: `Max order size (${sub.name})`, pass: !maxSizeBreach,
+      detail: maxSizeBreach ? `Exceeds sub-account cap of ${SVO2.fmt(sub.maxOrderSize)} units` : `Within ${SVO2.fmt(sub.maxOrderSize)}-unit sub-account cap` });
+
+    const notional = size * refPrice;
+    const marginOk = notional <= sub.equity * 4;
+    checks.push({ label: "Available margin", pass: marginOk,
+      detail: marginOk ? `${money(notional)} notional within available margin` : `${money(notional)} notional exceeds available margin` });
+
+    return { checks, passed: checks.every(c => c.pass) };
+  }
+
+  function riskLinesHtml(result) {
+    return result.checks.map(c => `
+      <div class="svi-risk-line"><span>${c.pass ? "✓" : "✕"} ${c.label}</span><span class="svi-chip ${c.pass ? "ok" : "bad"}">${c.pass ? "OK" : "FAIL"}</span></div>
+      <div class="svi-check-sub" style="margin:-2px 0 4px;">${c.detail}</div>`).join("");
+  }
+
+  function logExec(html) {
+    const entry = `<b>${nowStr()}</b> — ${html}`;
+    svxState.execLog.unshift(entry);
+    if (svxState.execLog.length > 12) svxState.execLog.length = 12;
+    const log = document.getElementById("svi-exec-log");
+    if (log) log.innerHTML = svxState.execLog.map(e => `<div class="svi-exec-line">${e}</div>`).join("");
+  }
+
+  function simulateOrderType(type, side, price, size, id) {
+    const label = ORDER_TYPES[type].label;
+    if (type === "twap" || type === "vwap") {
+      const durationInput = document.getElementById(type === "twap" ? "svi-twap-duration" : "svi-vwap-duration");
+      const duration = Number(durationInput && durationInput.value) || 30;
+      const slicesInput = document.getElementById("svi-twap-slices");
+      const slices = type === "twap" ? (Number(slicesInput && slicesInput.value) || 6) : Math.max(4, Math.round(duration / 5));
+      logExec(`<b>${label}</b> ${side.toUpperCase()} ${SVO2.fmt(size)} units scheduled over ${duration} min in ${slices} slices (id ${id})`);
+      let done = 0;
+      const tick = () => {
+        done++;
+        const sliceSize = size / slices;
+        const px = (price + rand(-0.03, 0.03)).toFixed(4);
+        logExec(`${label} slice ${done}/${slices}: ${SVO2.fmt(sliceSize, 1)} units @ ${px} USDT`);
+        if (done >= slices) {
+          SVO2.showToast(`${label} order ${id} fully executed — avg price ≈ ${SVO2.fmt(price, 4)} USDT.`);
+        } else {
+          setTimeout(tick, 450);
+        }
+      };
+      setTimeout(tick, 450);
+      SVO2.showToast(`${label} order accepted — slicing ${SVO2.fmt(size)} units over ${duration} min.`);
+    } else if (type === "iceberg") {
+      const displayInput = document.getElementById("svi-iceberg-display");
+      const display = Number(displayInput && displayInput.value) || Math.max(1, Math.round(size / 10));
+      const slices = Math.max(1, Math.ceil(size / display));
+      logExec(`<b>Iceberg</b> ${side.toUpperCase()} ${SVO2.fmt(size)} units — showing ${SVO2.fmt(display)} at a time (${slices} refills), id ${id}`);
+      SVO2.showToast(`Iceberg order live — only ${SVO2.fmt(display)} units visible on the book at once.`);
+    } else if (type === "post_only") {
+      const wouldCross = Math.random() < 0.15;
+      if (wouldCross) {
+        logExec(`<b>Post-Only</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — <span style="color:var(--svx-sell)">rejected, would have taken liquidity</span>`);
+        SVO2.showToast("Post-Only order rejected — it would have crossed the spread.");
+      } else {
+        logExec(`<b>Post-Only</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — resting on the book as maker (id ${id})`);
+        SVO2.showToast("Post-Only order resting on the book as maker.");
+      }
+    } else if (type === "fok") {
+      const filled = Math.random() < 0.8;
+      if (filled) {
+        logExec(`<b>Fill-or-Kill</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — fully filled instantly (id ${id})`);
+        SVO2.showToast("FOK order fully filled.");
+      } else {
+        logExec(`<b>Fill-or-Kill</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — <span style="color:var(--svx-sell)">insufficient book depth, order killed</span>`);
+        SVO2.showToast("FOK order killed — not enough liquidity to fill in full.");
+      }
+    } else if (type === "ioc") {
+      const filledPct = rand(35, 100);
+      logExec(`<b>Immediate-or-Cancel</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — ${filledPct.toFixed(0)}% filled immediately, remainder cancelled (id ${id})`);
+      SVO2.showToast(`IOC order ${filledPct.toFixed(0)}% filled, remainder cancelled.`);
+    } else if (type === "stop") {
+      logExec(`<b>Stop</b> ${side.toUpperCase()} ${SVO2.fmt(size)} armed — triggers at stop price (id ${id})`);
+      SVO2.showToast("Stop order armed and working.");
+    } else if (type === "limit") {
+      logExec(`<b>Limit</b> ${side.toUpperCase()} ${SVO2.fmt(size)} resting on the book (id ${id})`);
+      SVO2.showToast("Limit order placed on the book.");
+    } else {
+      logExec(`<b>Market</b> ${side.toUpperCase()} ${SVO2.fmt(size)} executed @ ${SVO2.fmt(price, 4)} USDT (id ${id})`);
+      SVO2.showToast("Market order executed.");
+    }
   }
 
   /* ===================== DERIVATIVES ===================== */
@@ -590,12 +798,386 @@
     `;
   }
 
+  /* ===================== INSTITUTIONAL ===================== */
+  function subnavHtml() {
+    return [
+      ["risk", "Risk &amp; Margin"],
+      ["connectivity", "Connectivity &amp; Infrastructure"],
+      ["clearing", "Clearing &amp; Settlement"],
+      ["data", "Data &amp; Analytics"],
+    ].map(([key, label]) => `<button class="${svxState.sviSection === key ? "active" : ""}" onclick="setSviSection('${key}')">${label}</button>`).join("");
+  }
+
+  function renderInstitutional() {
+    return `
+      <div class="svx-panel svi-wrap">
+        <div class="svi-subnav" id="svi-subnav">${subnavHtml()}</div>
+        <div id="svi-section">${renderSviSection(svxState.sviSection)}</div>
+      </div>`;
+  }
+
+  function renderSviSection(section) {
+    if (section === "risk") return renderRiskSection();
+    if (section === "connectivity") return renderConnectivitySection();
+    if (section === "clearing") return renderClearingSection();
+    if (section === "data") return renderDataSection();
+    return "";
+  }
+
+  function setSviSection(key) {
+    if (svxState.sviSection === "data" && key !== "data") stopL3Feed();
+    svxState.sviSection = key;
+    document.getElementById("svi-subnav").innerHTML = subnavHtml();
+    document.getElementById("svi-section").innerHTML = renderSviSection(key);
+  }
+
+  /* ---------------- Risk & Margin ---------------- */
+  function renderRiskSection() {
+    const sub = activeSub();
+    const totalEquity = svxState.subAccounts.reduce((a, s) => a + s.equity, 0);
+    return `
+      <div class="svi-section-title">Sub-Account Architecture</div>
+      <p class="svi-desc" style="margin:-4px 0 12px;">
+        Segregate capital and risk limits by desk or strategy. Total firm equity across sub-accounts: <b style="color:var(--svx-text)">${money(totalEquity)}</b>.
+      </p>
+      <div class="svi-grid svi-grid-3">
+        ${svxState.subAccounts.map(s => `
+          <div class="svi-subaccount ${s.id === sub.id ? "active" : ""}" onclick="selectSubAccount('${s.id}')">
+            <h5>${s.name}</h5>
+            <div class="svi-sa-meta"><span>Equity</span><span class="svi-mono-num">${money(s.equity)}</span></div>
+            <div class="svi-sa-meta"><span>Allocation</span><span class="svi-mono-num">${s.allocPct}%</span></div>
+            <div class="svi-sa-meta"><span>Max order size</span><span class="svi-mono-num">${SVO2.fmt(s.maxOrderSize)}</span></div>
+            <div class="svi-sa-meta"><span>Max drawdown</span><span class="svi-mono-num">${s.maxDrawdown}%</span></div>
+          </div>`).join("")}
+      </div>
+
+      <div class="svi-section-title">Real-Time Portfolio Margining</div>
+      <div class="svi-grid svi-grid-2">
+        <div class="svi-card">
+          <h4>Isolated Margining</h4>
+          <div class="svi-big">$14,220</div>
+          <p class="svi-desc">Margin required if each position on this desk is margined independently, with no offset between correlated carbon-credit exposures.</p>
+        </div>
+        <div class="svi-card">
+          <h4>Cross / Portfolio Margining <span class="svi-chip ok">Active</span></h4>
+          <div class="svi-big" style="color:var(--svx-buy)">$9,640</div>
+          <p class="svi-desc">Offsetting long/short exposure across correlated carbon-credit instruments reduces required capital by <b style="color:var(--svx-buy)">32%</b> versus isolated margining.</p>
+        </div>
+      </div>
+
+      <div class="svi-section-title">Automated Liquidation Engine</div>
+      <div class="svi-card">
+        <div class="svi-slider-row">
+          <span style="font-size:11px;color:var(--svx-text-dim);min-width:120px;">Margin utilisation</span>
+          <input type="range" id="svi-margin-util" min="0" max="100" value="42" oninput="onMarginUtilChange(this.value)">
+          <span class="svi-slider-val" id="svi-margin-util-val">42%</span>
+        </div>
+        <div class="svi-progress" style="margin-top:10px;"><span id="svi-margin-bar" style="width:42%;background:linear-gradient(90deg,var(--svx-buy),var(--svi-gold))"></span></div>
+        <table class="svi-table" style="margin-top:14px;">
+          <thead><tr><th>Tier</th><th>Trigger</th><th>Automated Action</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>1 — Margin Call</td><td>80% maintenance margin</td><td>Warning + margin top-up request</td><td id="svi-tier-1"><span class="svi-chip neutral">Not triggered</span></td></tr>
+            <tr><td>2 — Partial De-Risk</td><td>90% maintenance margin</td><td>Auto-reduce highest-risk positions</td><td id="svi-tier-2"><span class="svi-chip neutral">Not triggered</span></td></tr>
+            <tr><td>3 — Full Liquidation</td><td>100% maintenance margin</td><td>Multi-tier ADL / full close-out</td><td id="svi-tier-3"><span class="svi-chip neutral">Not triggered</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="svi-section-title">Hard Position &amp; Drawdown Limits</div>
+      <div class="svi-grid svi-grid-2">
+        <div class="svi-card">
+          <h4>Max Position Size (${sub.name})</h4>
+          <div class="svi-slider-row" style="margin-top:10px;">
+            <input type="range" id="svi-pos-limit" min="1000" max="20000" step="500" value="${sub.maxOrderSize}" oninput="document.getElementById('svi-pos-limit-val').textContent = SVO2.fmt(this.value) + ' units'">
+            <span class="svi-slider-val" id="svi-pos-limit-val">${SVO2.fmt(sub.maxOrderSize)} units</span>
+          </div>
+          <p class="svi-desc">Orders that would breach this hard cap are cancelled automatically before they reach the matching engine.</p>
+        </div>
+        <div class="svi-card">
+          <h4>Max Daily Drawdown</h4>
+          <div class="svi-slider-row" style="margin-top:10px;">
+            <input type="range" id="svi-dd-limit" min="2" max="30" step="1" value="${sub.maxDrawdown}" oninput="document.getElementById('svi-dd-limit-val').textContent = this.value + '%'">
+            <span class="svi-slider-val" id="svi-dd-limit-val">${sub.maxDrawdown}%</span>
+          </div>
+          <p class="svi-desc">Breaching this limit triggers an automatic trading halt on the sub-account for the remainder of the session.</p>
+          <button class="svi-btn small" onclick="simulateDrawdownBreach()" style="margin-top:6px;">Simulate breach</button>
+        </div>
+      </div>
+      <p class="svi-note">Illustrative risk-management simulation for demonstration only — no real capital, margin engine, or liquidation logic is connected.</p>`;
+  }
+
+  function selectSubAccount(id) {
+    svxState.activeSubAccount = id;
+    document.getElementById("svi-section").innerHTML = renderRiskSection();
+    SVO2.showToast(`Switched to ${activeSub().name}.`);
+  }
+  function onMarginUtilChange(v) {
+    v = Number(v);
+    document.getElementById("svi-margin-util-val").textContent = v + "%";
+    document.getElementById("svi-margin-bar").style.width = v + "%";
+    document.getElementById("svi-tier-1").innerHTML = `<span class="svi-chip ${v >= 80 ? "warn" : "neutral"}">${v >= 80 ? "Triggered" : "Not triggered"}</span>`;
+    document.getElementById("svi-tier-2").innerHTML = `<span class="svi-chip ${v >= 90 ? "warn" : "neutral"}">${v >= 90 ? "Triggered" : "Not triggered"}</span>`;
+    document.getElementById("svi-tier-3").innerHTML = `<span class="svi-chip ${v >= 100 ? "bad" : "neutral"}">${v >= 100 ? "Triggered" : "Not triggered"}</span>`;
+    if (v >= 100) SVO2.showToast("Tier 3 breach — simulated full liquidation triggered.");
+    else if (v >= 90) SVO2.showToast("Tier 2 breach — simulated partial de-risking triggered.");
+    else if (v >= 80) SVO2.showToast("Tier 1 breach — simulated margin call issued.");
+  }
+  function simulateDrawdownBreach() {
+    SVO2.showToast(`Daily drawdown limit breached on ${activeSub().name} — trading halted (simulated).`);
+  }
+
+  /* ---------------- Connectivity & Infrastructure ---------------- */
+  function renderConnectivitySection() {
+    return `
+      <div class="svi-section-title">Direct Market Access &amp; Colocation</div>
+      <div class="svi-grid svi-grid-4">
+        <div class="svi-stat-tile"><div class="svi-stat-val" style="color:var(--svx-buy)">Connected</div><div class="svi-stat-lbl">DMA Status</div></div>
+        <div class="svi-stat-tile"><div class="svi-stat-val">38µs</div><div class="svi-stat-lbl">Matching Engine RTT</div></div>
+        <div class="svi-stat-tile"><div class="svi-stat-val">12µs</div><div class="svi-stat-lbl">Market Data Latency</div></div>
+        <div class="svi-stat-tile"><div class="svi-stat-val">AE-DXB1</div><div class="svi-stat-lbl">Cross-Connect POP</div></div>
+      </div>
+      <p class="svi-note" style="border-top:none;padding-top:6px;">Colocation racks available at AE-DXB1 (Dubai) and AE-RAK1 (Ras Al Khaimah) with single-digit-microsecond cross-connects to the matching engine.</p>
+
+      <div class="svi-section-title">FIX Protocol Session</div>
+      <div class="svi-grid svi-grid-2">
+        <div class="svi-card">
+          <h4>Session 1: SVX_CLIENT &rarr; SVX_GATEWAY <span class="svi-chip ok">Logged In</span></h4>
+          <div class="svi-sa-meta" style="margin-top:8px;"><span>Protocol</span><span>FIX 4.4</span></div>
+          <div class="svi-sa-meta"><span>Heartbeat interval</span><span>30s</span></div>
+          <div class="svi-sa-meta"><span>Sequence #</span><span id="svi-fix-seq">${svxState.fixSeq}</span></div>
+          <button class="svi-btn small solid" onclick="sendFixTestOrder()" style="margin-top:10px;">Send Test NewOrderSingle (35=D)</button>
+        </div>
+        <div class="svi-card">
+          <h4>Session Log</h4>
+          <div class="svi-console" id="svi-fix-console"></div>
+        </div>
+      </div>
+
+      <div class="svi-section-title">High-Throughput API</div>
+      <div class="svi-grid svi-grid-2">
+        <div class="svi-card">
+          <h4>REST API</h4>
+          <div class="svi-sa-meta"><span>Rate limit</span><span>2,400 req/min</span></div>
+          <div class="svi-sa-meta"><span>Burst</span><span>120 req/sec</span></div>
+          <div class="svi-sa-meta"><span>Auth</span><span>HMAC-signed API key</span></div>
+        </div>
+        <div class="svi-card">
+          <h4>WebSocket Streaming</h4>
+          <div class="svi-sa-meta"><span>Rate limit</span><span>10,000 msg/min</span></div>
+          <div class="svi-sa-meta"><span>Channels</span><span>Trades · L2 · L3 · Account</span></div>
+          <div class="svi-sa-meta"><span>Auth</span><span>Signed session token</span></div>
+        </div>
+      </div>
+      <p class="svi-note">Illustrative connectivity simulation — no real FIX gateway, colocation facility, or API infrastructure is connected.</p>`;
+  }
+
+  function sendFixTestOrder() {
+    svxState.fixSeq++;
+    const seqEl = document.getElementById("svi-fix-seq");
+    if (seqEl) seqEl.textContent = svxState.fixSeq;
+    const clOrdId = uid();
+    const msg = `8=FIX.4.4|9=145|35=D|49=SVX_CLIENT|56=SVX_GATEWAY|34=${svxState.fixSeq}|52=${new Date().toISOString()}|11=${clOrdId}|55=RAK-URB/USDT|54=1|38=250|40=2|44=18.40|59=0|10=118|`;
+    const ack = `8=FIX.4.4|9=132|35=8|49=SVX_GATEWAY|56=SVX_CLIENT|34=${svxState.fixSeq}|11=${clOrdId}|17=${uid()}|39=0|150=0|55=RAK-URB/USDT|10=092|`;
+    const consoleEl = document.getElementById("svi-fix-console");
+    if (consoleEl) {
+      consoleEl.innerHTML += `<div class="svi-log-line"><span class="svi-log-time">${nowStr()}</span><span class="svi-log-tag">OUT</span>${msg}</div>` +
+        `<div class="svi-log-line"><span class="svi-log-time">${nowStr()}</span><span class="svi-log-tag">IN</span>${ack}</div>`;
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+    SVO2.showToast("FIX NewOrderSingle sent — ExecutionReport (39=0 New) received.");
+  }
+
+  /* ---------------- Clearing & Settlement ---------------- */
+  function renderClearingSection() {
+    const collateral = [
+      { name: "USDT", pct: 42, haircut: "0%", color: "var(--svx-buy)" },
+      { name: "Digital Dirham", pct: 23, haircut: "0%", color: "var(--secondary)" },
+      { name: "USDC", pct: 18, haircut: "1%", color: "#5c8fd6" },
+      { name: "Tokenised T-Bill (SVTB)", pct: 17, haircut: "5%", color: "#8a7fc9" },
+    ];
+    return `
+      <div class="svi-section-title">Multi-Asset Collateral</div>
+      <div class="svi-card">
+        <div class="svi-collateral-bar">
+          ${collateral.map(c => `<span style="width:${c.pct}%;background:${c.color}">${c.pct}%</span>`).join("")}
+        </div>
+        <table class="svi-table" style="margin-top:14px;">
+          <thead><tr><th>Asset</th><th>Portfolio Weight</th><th>Haircut</th><th>Eligible as Collateral</th></tr></thead>
+          <tbody>
+            ${collateral.map(c => `<tr><td>${c.name}</td><td>${c.pct}%</td><td>${c.haircut}</td><td><span class="svi-chip ok">Yes</span></td></tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="svi-section-title">Tri-Party Settlement</div>
+      <table class="svi-table">
+        <thead><tr><th>Custodian</th><th>Type</th><th>Status</th><th>Assets Held Off-Exchange</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Zodia Custody</td><td>Qualified Custodian</td><td><span class="svi-chip ok">Connected</span></td><td>$1,240,000.00</td><td><button class="svi-btn small" onclick="settleCustodian('Zodia Custody')">Settle</button></td></tr>
+          <tr><td>Copper ClearLoop</td><td>Prime Broker Network</td><td><span class="svi-chip ok">Connected</span></td><td>$860,000.00</td><td><button class="svi-btn small" onclick="settleCustodian('Copper ClearLoop')">Settle</button></td></tr>
+          <tr><td>Fireblocks</td><td>MPC Custody</td><td><span class="svi-chip warn">Pending KYB</span></td><td>$0.00</td><td><button class="svi-btn small ghost" disabled>Settle</button></td></tr>
+        </tbody>
+      </table>
+      <p class="svi-desc" style="margin-top:8px;">Trading against tri-party-held collateral lets institutions keep assets with an independent custodian instead of pre-funding the exchange directly, reducing counterparty risk.</p>
+
+      <div class="svi-section-title">Netting &amp; Straight-Through Processing</div>
+      <div class="svi-flowline">
+        <div class="svi-fnode">Trade Executed</div><div class="svi-arrow">&rarr;</div>
+        <div class="svi-fnode">Netting Engine</div><div class="svi-arrow">&rarr;</div>
+        <div class="svi-fnode">STP to Back Office</div><div class="svi-arrow">&rarr;</div>
+        <div class="svi-fnode">Reconciled</div>
+      </div>
+      <div class="svi-grid svi-grid-3">
+        <div class="svi-stat-tile"><div class="svi-stat-val" id="svi-stp-netted">${svxState.stpNetted}</div><div class="svi-stat-lbl">Trades Netted Today</div></div>
+        <div class="svi-stat-tile"><div class="svi-stat-val" id="svi-stp-rate">${svxState.stpRate.toFixed(1)}%</div><div class="svi-stat-lbl">STP Success Rate</div></div>
+        <div class="svi-stat-tile"><div class="svi-stat-val">T+0</div><div class="svi-stat-lbl">Settlement Cycle</div></div>
+      </div>
+      <button class="svi-btn small solid" onclick="runNettingCycle()" style="margin-top:12px;">Run Netting Cycle</button>
+      <p class="svi-note">Illustrative clearing &amp; settlement simulation — no real custodian, netting engine, or back-office connection exists.</p>`;
+  }
+
+  function settleCustodian(name) {
+    SVO2.showToast(`Settlement instruction sent to ${name} (simulated) — funds move T+0 against tri-party-held collateral.`);
+  }
+  function runNettingCycle() {
+    svxState.stpNetted += Math.round(rand(4, 14));
+    svxState.stpRate = Math.min(99.9, svxState.stpRate + rand(0, 0.3));
+    const nEl = document.getElementById("svi-stp-netted");
+    const rEl = document.getElementById("svi-stp-rate");
+    if (nEl) nEl.textContent = svxState.stpNetted;
+    if (rEl) rEl.textContent = svxState.stpRate.toFixed(1) + "%";
+    SVO2.showToast("Netting cycle complete — positions reconciled straight-through to the back office.");
+  }
+
+  /* ---------------- Data & Analytics ---------------- */
+  const L3_INSTRUMENTS = ["RAK-URB", "NAT-REM", "REN-AVD", "IND-EFF", "BLU-CST"];
+  function renderDataSection() {
+    return `
+      <div class="svi-section-title">Level 3 Order-By-Order Feed</div>
+      <div class="svi-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+          <span class="svi-desc" style="margin:0;">Every individual order add, cancel, and match — not just aggregated price levels.</span>
+          <button class="svi-btn small ${svxState.l3Running ? "ghost" : "solid"}" id="svi-l3-toggle" onclick="toggleL3Feed()">${svxState.l3Running ? "Disable Level 3 Feed" : "Enable Level 3 Feed"}</button>
+        </div>
+        <div class="svi-l3-row" style="font-weight:700;color:var(--svx-text-dim);font-family:inherit;">
+          <span>TIME</span><span>SIDE</span><span>EVENT</span><span>PRICE</span><span>SIZE</span>
+        </div>
+        <div id="svi-l3-feed" style="max-height:220px;overflow-y:auto;"></div>
+      </div>
+
+      <div class="svi-section-title">Historical Tick Data</div>
+      <div class="svi-card">
+        <div class="svi-inline-fields">
+          <div class="svi-field"><label>Instrument</label>
+            <select id="svi-tick-instrument">${L3_INSTRUMENTS.map(i => `<option>${i}</option>`).join("")}</select>
+          </div>
+          <div class="svi-field"><label>Range</label>
+            <select id="svi-tick-range">
+              <option value="1">Last 1 day</option>
+              <option value="7" selected>Last 7 days</option>
+              <option value="30">Last 30 days</option>
+            </select>
+          </div>
+        </div>
+        <button class="svi-btn solid" onclick="exportTickData()">Export Tick Data (CSV)</button>
+        <p class="svi-hint" style="margin-top:8px;">Generates a simulated order-and-trade tick file suitable for backtesting pipelines.</p>
+      </div>
+
+      <div class="svi-section-title">Strategy Backtesting</div>
+      <div class="svi-card">
+        <div class="svi-inline-fields">
+          <div class="svi-field"><label>Strategy</label>
+            <select id="svi-bt-strategy">
+              <option>Mean Reversion — RAK-URB</option>
+              <option>Cross-Instrument Carbon Beta Hedge</option>
+              <option>VWAP Execution Shortfall</option>
+            </select>
+          </div>
+          <div class="svi-field"><label>Lookback</label>
+            <select id="svi-bt-lookback"><option>90 days</option><option>180 days</option><option>1 year</option></select>
+          </div>
+        </div>
+        <button class="svi-btn small" onclick="runBacktest()">Run Backtest</button>
+        <div id="svi-bt-result"></div>
+      </div>
+      <p class="svi-note">Illustrative data &amp; analytics simulation — figures are generated client-side for demonstration.</p>`;
+  }
+
+  function toggleL3Feed() {
+    svxState.l3Running = !svxState.l3Running;
+    const btn = document.getElementById("svi-l3-toggle");
+    if (svxState.l3Running) {
+      if (btn) { btn.textContent = "Disable Level 3 Feed"; btn.classList.remove("solid"); btn.classList.add("ghost"); }
+      startL3Feed();
+    } else {
+      if (btn) { btn.textContent = "Enable Level 3 Feed"; btn.classList.add("solid"); btn.classList.remove("ghost"); }
+      stopL3Feed();
+    }
+  }
+  function startL3Feed() {
+    stopL3Feed();
+    svxState.l3Interval = setInterval(() => {
+      const feed = document.getElementById("svi-l3-feed");
+      if (!feed) { stopL3Feed(); return; }
+      const events = ["add", "add", "add", "cancel", "match"];
+      const evt = events[Math.floor(Math.random() * events.length)];
+      const side = Math.random() < 0.5 ? "BID" : "ASK";
+      const inst = L3_INSTRUMENTS[Math.floor(Math.random() * L3_INSTRUMENTS.length)];
+      const price = (18 + rand(-6, 6)).toFixed(2);
+      const size = Math.round(rand(20, 3000));
+      const row = document.createElement("div");
+      row.className = `svi-l3-row ${evt}`;
+      row.innerHTML = `<span>${nowStr()}</span><span class="svi-l3-side">${side}</span><span>${inst} · ${evt.toUpperCase()}</span><span>${price}</span><span>${size}</span>`;
+      feed.insertBefore(row, feed.firstChild);
+      while (feed.children.length > 40) feed.removeChild(feed.lastChild);
+    }, 350);
+  }
+  function stopL3Feed() {
+    if (svxState.l3Interval) { clearInterval(svxState.l3Interval); svxState.l3Interval = null; }
+  }
+  function exportTickData() {
+    const inst = document.getElementById("svi-tick-instrument").value;
+    const days = Number(document.getElementById("svi-tick-range").value);
+    const rows = ["timestamp,instrument,side,price,size"];
+    const base = 18 + Math.random() * 8;
+    const count = Math.min(4000, days * 200);
+    let t = Date.now() - days * 86400000;
+    let px = base;
+    for (let i = 0; i < count; i++) {
+      px = Math.max(0.5, px + rand(-0.15, 0.15));
+      t += Math.round(rand(2000, 60000));
+      rows.push(`${new Date(t).toISOString()},${inst},${Math.random() < 0.5 ? "buy" : "sell"},${px.toFixed(4)},${Math.round(rand(1, 800))}`);
+    }
+    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${inst}_tick_data_${days}d.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    SVO2.showToast(`Exported ${count.toLocaleString()} simulated ticks for ${inst}.`);
+  }
+  function runBacktest() {
+    const winRate = rand(48, 68);
+    const sharpe = rand(0.7, 2.1);
+    const maxDD = rand(-22, -6);
+    const result = document.getElementById("svi-bt-result");
+    if (result) result.innerHTML = `
+      <div class="svi-grid svi-grid-3" style="margin-top:12px;">
+        <div class="svi-stat-tile"><div class="svi-stat-val">${winRate.toFixed(0)}%</div><div class="svi-stat-lbl">Win Rate</div></div>
+        <div class="svi-stat-tile"><div class="svi-stat-val">${sharpe.toFixed(2)}</div><div class="svi-stat-lbl">Sharpe Ratio</div></div>
+        <div class="svi-stat-tile"><div class="svi-stat-val" style="color:var(--svx-sell)">${maxDD.toFixed(1)}%</div><div class="svi-stat-lbl">Max Drawdown</div></div>
+      </div>`;
+    SVO2.showToast("Backtest complete (simulated).");
+  }
+
   function renderMain() {
     const el = document.getElementById("svx-main");
     if (svxState.tab === "spot") el.innerHTML = renderSpot();
     else if (svxState.tab === "derivatives") el.innerHTML = renderDerivatives();
     else if (svxState.tab === "staking") el.innerHTML = renderStaking();
     else if (svxState.tab === "risk") el.innerHTML = renderRisk();
+    else if (svxState.tab === "institutional") el.innerHTML = renderInstitutional();
     refreshAccountStrip();
 
     if (svxState.tab === "spot") {

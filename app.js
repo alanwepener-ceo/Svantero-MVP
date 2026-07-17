@@ -16,11 +16,11 @@ const SVO2 = (() => {
   };
 
   const creditTypes = [
-    { type: "Regenerative Urbanisation (RAK)", ticker: "RAK-URB", price: 18.40, units: 42000, color: "#0B3D2E", targetBeta: 0.90, trustClass: "Class I" },
-    { type: "Nature-Based Removal (Multi-Origin)", ticker: "NAT-REM", price: 21.75, units: 31500, color: "#12563f", targetBeta: 1.15, trustClass: "Class II" },
+    { type: "Regenerative Urbanisation (RAK)", ticker: "RAK-URB", price: 18.40, units: 42000, color: "#282e35", targetBeta: 0.90, trustClass: "Class I" },
+    { type: "Nature-Based Removal (Multi-Origin)", ticker: "NAT-REM", price: 21.75, units: 31500, color: "#454e58", targetBeta: 1.15, trustClass: "Class II" },
     { type: "Renewable Energy Avoidance", ticker: "REN-AVD", price: 9.60,  units: 27800, color: "#C9A227", targetBeta: 0.75, trustClass: "Class II" },
     { type: "Industrial Efficiency Credits", ticker: "IND-EFF", price: 14.20, units: 19600, color: "#8a6a10", targetBeta: 1.30, trustClass: "Class III" },
-    { type: "Blue Carbon / Coastal Projects", ticker: "BLU-CST", price: 26.90, units: 12300, color: "#4a7a68", targetBeta: 1.50, trustClass: "Class IV" },
+    { type: "Blue Carbon / Coastal Projects", ticker: "BLU-CST", price: 26.90, units: 12300, color: "#6b7480", targetBeta: 1.50, trustClass: "Class IV" },
   ];
 
   /* ---------------- Governance & Trust Layer (mock) ----------------
@@ -182,11 +182,11 @@ const SVO2 = (() => {
   ];
 
   const tokenomics = [
-    { label: "Unlocked (Years 2–20)", value: 720500000, color: "#0B3D2E" },
-    { label: "DEX / Public Listing", value: 20000000, color: "#12563f" },
+    { label: "Unlocked (Years 2–20)", value: 720500000, color: "#282e35" },
+    { label: "DEX / Public Listing", value: 20000000, color: "#454e58" },
     { label: "Founders", value: 20000000, color: "#C9A227" },
     { label: "Pre-Sale", value: 18000000, color: "#8a6a10" },
-    { label: "Treasury / Liquidity", value: 15000000, color: "#4a7a68" },
+    { label: "Treasury / Liquidity", value: 15000000, color: "#6b7480" },
     { label: "Partnerships", value: 5000000, color: "#b08d2b" },
     { label: "Pre-Seed", value: 1500000, color: "#d8c48a" },
   ];
@@ -401,9 +401,9 @@ const SVO2 = (() => {
       const y = h - pad - ((v - min) / range) * (h - pad * 2);
       return `${x},${y}`;
     });
-    const line = `<polyline points="${pts.join(" ")}" fill="none" stroke="#0B3D2E" stroke-width="2.5"/>`;
+    const line = `<polyline points="${pts.join(" ")}" fill="none" stroke="#282e35" stroke-width="2.5"/>`;
     const areaPts = `${pad},${h - pad} ${pts.join(" ")} ${pad + (values.length - 1) * stepX},${h - pad}`;
-    const area = `<polygon points="${areaPts}" fill="#0B3D2E" opacity="0.08"/>`;
+    const area = `<polygon points="${areaPts}" fill="#282e35" opacity="0.08"/>`;
     svgEl.setAttribute("viewBox", `0 0 ${w} ${h}`);
     svgEl.innerHTML = area + line;
   }
@@ -475,8 +475,8 @@ const SVO2 = (() => {
     for (let g = 0; g <= gridLines; g++) {
       const p = minP + (rangeP * g) / gridLines;
       const y = yFor(p);
-      svg += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w - padR}" y2="${y.toFixed(1)}" stroke="#1c342c" stroke-width="1"/>`;
-      svg += `<text x="${w - padR + 6}" y="${(y + 3).toFixed(1)}" fill="#7f978f" font-size="10" font-family="Consolas,Menlo,monospace">${p.toFixed(2)}</text>`;
+      svg += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w - padR}" y2="${y.toFixed(1)}" stroke="#262b31" stroke-width="1"/>`;
+      svg += `<text x="${w - padR + 6}" y="${(y + 3).toFixed(1)}" fill="#7a828c" font-size="10" font-family="Consolas,Menlo,monospace">${p.toFixed(2)}</text>`;
     }
 
     candles.forEach((c, i) => {
@@ -497,7 +497,7 @@ const SVO2 = (() => {
     const lastColor = last.close >= last.open ? "#0ECB81" : "#F6465D";
     svg += `<line x1="${padL}" y1="${lastY.toFixed(1)}" x2="${w - padR}" y2="${lastY.toFixed(1)}" stroke="${lastColor}" stroke-width="1" stroke-dasharray="4,3"/>`;
     svg += `<rect x="${w - padR}" y="${(lastY - 9).toFixed(1)}" width="${padR}" height="18" fill="${lastColor}"/>`;
-    svg += `<text x="${w - padR + 6}" y="${(lastY + 4).toFixed(1)}" fill="#0c1a15" font-size="10.5" font-weight="700" font-family="Consolas,Menlo,monospace">${last.close.toFixed(2)}</text>`;
+    svg += `<text x="${w - padR + 6}" y="${(lastY + 4).toFixed(1)}" fill="#14171b" font-size="10.5" font-weight="700" font-family="Consolas,Menlo,monospace">${last.close.toFixed(2)}</text>`;
     svg += `</svg>`;
 
     container.innerHTML = `<div class="tv-tooltip" id="tv-tip-${container.id}"></div>${svg}`;
@@ -518,7 +518,7 @@ const SVO2 = (() => {
       tip.style.top = "6px";
       tip.innerHTML = `<div style="color:${up ? "#0ECB81" : "#F6465D"};font-weight:700;">O ${c.open.toFixed(2)} &nbsp; H ${c.high.toFixed(2)}</div>
         <div>L ${c.low.toFixed(2)} &nbsp; C ${c.close.toFixed(2)}</div>
-        <div style="color:#7f978f;">Vol ${Math.round(c.volume).toLocaleString()}</div>`;
+        <div style="color:#7a828c;">Vol ${Math.round(c.volume).toLocaleString()}</div>`;
     });
     svgEl.addEventListener("mouseleave", () => { tip.style.display = "none"; });
   }
@@ -550,10 +550,10 @@ const SVO2 = (() => {
     const zeroY = y(0);
 
     let svg = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="display:block;">`;
-    svg += `<line x1="${padL}" y1="${zeroY.toFixed(1)}" x2="${w - padR}" y2="${zeroY.toFixed(1)}" stroke="#25423a" stroke-width="1"/>`;
-    svg += `<text x="${padL - 6}" y="${(zeroY + 3).toFixed(1)}" fill="#7f978f" font-size="9" text-anchor="end">0</text>`;
-    svg += `<line x1="${x(K).toFixed(1)}" y1="${padT}" x2="${x(K).toFixed(1)}" y2="${h - padB}" stroke="#7f978f" stroke-width="1" stroke-dasharray="3,3"/>`;
-    svg += `<text x="${x(K).toFixed(1)}" y="${h - padB + 14}" fill="#7f978f" font-size="10" text-anchor="middle">K ${K.toFixed(2)}</text>`;
+    svg += `<line x1="${padL}" y1="${zeroY.toFixed(1)}" x2="${w - padR}" y2="${zeroY.toFixed(1)}" stroke="#33393f" stroke-width="1"/>`;
+    svg += `<text x="${padL - 6}" y="${(zeroY + 3).toFixed(1)}" fill="#7a828c" font-size="9" text-anchor="end">0</text>`;
+    svg += `<line x1="${x(K).toFixed(1)}" y1="${padT}" x2="${x(K).toFixed(1)}" y2="${h - padB}" stroke="#7a828c" stroke-width="1" stroke-dasharray="3,3"/>`;
+    svg += `<text x="${x(K).toFixed(1)}" y="${h - padB + 14}" fill="#7a828c" font-size="10" text-anchor="middle">K ${K.toFixed(2)}</text>`;
     svg += `<line x1="${x(breakeven).toFixed(1)}" y1="${padT}" x2="${x(breakeven).toFixed(1)}" y2="${h - padB}" stroke="#C9A227" stroke-width="1" stroke-dasharray="2,2"/>`;
     svg += `<text x="${x(breakeven).toFixed(1)}" y="${padT - 4}" fill="#C9A227" font-size="10" text-anchor="middle">BE ${breakeven.toFixed(2)}</text>`;
 
@@ -566,7 +566,7 @@ const SVO2 = (() => {
     }
     const linePts = pts.map(([S, v]) => `${x(S).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
     svg += `<polyline points="${linePts}" fill="none" stroke="#C9A227" stroke-width="2.2"/>`;
-    svg += `<circle cx="${x(breakeven).toFixed(1)}" cy="${zeroY.toFixed(1)}" r="4" fill="#0c1a15" stroke="#C9A227" stroke-width="2"/>`;
+    svg += `<circle cx="${x(breakeven).toFixed(1)}" cy="${zeroY.toFixed(1)}" r="4" fill="#14171b" stroke="#C9A227" stroke-width="2"/>`;
     svg += `</svg>`;
 
     container.innerHTML = svg;
