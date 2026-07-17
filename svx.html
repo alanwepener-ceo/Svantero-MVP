@@ -314,10 +314,10 @@
     return `
       <div class="svx-panel">
         <div class="svx-bottom-tabs"><span class="active">Positions (${svxState.positions.length})</span><span>Working Orders (${svxState.orders.length})</span></div>
-        <table class="svx-table">
+        <div class="table-scroll"><table class="svx-table">
           <thead><tr><th>Instrument</th><th>Side</th><th>Type</th><th>Size</th><th>Price</th><th>Detail</th></tr></thead>
           <tbody>${posRows}</tbody>
-        </table>
+        </table></div>
       </div>`;
   }
 
@@ -620,7 +620,7 @@
     return `
       <div class="svx-panel">
         <h3>Futures</h3>
-        <table class="svx-table">
+        <div class="table-scroll"><table class="svx-table">
           <thead><tr><th>Contract</th><th>Underlying</th><th>Expiry</th><th>Mark</th><th>Basis</th><th>Open Interest</th><th>Funding</th><th>Contracts</th><th>Trade</th></tr></thead>
           <tbody>
             ${SVO2.futuresContracts.map((f, i) => `<tr>
@@ -637,11 +637,11 @@
               </td>
             </tr>`).join("")}
           </tbody>
-        </table>
+        </table></div>
       </div>
       <div class="svx-panel">
         <h3>Options Chain</h3>
-        <table class="svx-table">
+        <div class="table-scroll"><table class="svx-table">
           <thead><tr><th>Underlying</th><th>Strike</th><th>Type</th><th>Premium</th><th>Expiry</th><th>Delta</th><th>Contracts</th><th>Trade</th></tr></thead>
           <tbody>
             ${SVO2.optionsChain.map((o, i) => `<tr onclick="selectOption(${i})" style="cursor:pointer;${i === svxState.selectedOptionIdx ? "background:rgba(201,162,39,0.06);" : ""}">
@@ -659,7 +659,7 @@
               </td>
             </tr>`).join("")}
           </tbody>
-        </table>
+        </table></div>
         <p style="font-size:11.5px;color:var(--svx-text-dim);margin-top:10px;">
           Futures and options settle against tokenised carbon credit reference prices. Leverage and premium
           mechanics shown here are illustrative only. Click a row, or Buy/Sell, to load its breakeven analysis below.
@@ -720,12 +720,12 @@
       </div>
       <div class="svx-panel">
         <h3>Your Staked Positions</h3>
-        <table class="svx-table">
+        <div class="table-scroll"><table class="svx-table">
           <thead><tr><th>Pool</th><th>Amount</th><th>APY</th><th>Est. Annual Yield</th></tr></thead>
           <tbody id="staked-positions-body">
             <tr><td colspan="4"><div class="svx-empty-state">No active staking positions yet — stake into a pool above.</div></td></tr>
           </tbody>
-        </table>
+        </table></div>
         <p style="font-size:11.5px;color:var(--svx-text-dim);margin-top:10px;">
           Yield-farming stakes are separate from the Operator and Verifier bonds used in the Governance &amp;
           Trust Layer (see the Tokenisation Engine page) — staking here earns platform yield, while governance
@@ -778,7 +778,7 @@
             from a 90-day simulated return series via covariance ÷ index variance.
           </p>
         </div>
-        <table class="svx-table">
+        <div class="table-scroll"><table class="svx-table">
           <thead><tr><th>Asset</th><th>Portfolio Weight</th><th>Beta</th><th>Contribution to Portfolio Beta</th></tr></thead>
           <tbody>
             ${sorted.map(r => `<tr>
@@ -787,7 +787,7 @@
               <td>${r.contribution.toFixed(3)}</td>
             </tr>`).join("")}
           </tbody>
-        </table>
+        </table></div>
         <p style="font-size:12px;color:var(--svx-text-dim);margin-top:12px;">
           Diversification note: <strong>${highest.type}</strong> contributes the most market risk (beta
           ${highest.beta.toFixed(2)}), while <strong>${lowest.type}</strong> is the most defensive (beta
@@ -873,14 +873,14 @@
           <span class="svi-slider-val" id="svi-margin-util-val">42%</span>
         </div>
         <div class="svi-progress" style="margin-top:10px;"><span id="svi-margin-bar" style="width:42%;background:linear-gradient(90deg,var(--svx-buy),var(--svi-gold))"></span></div>
-        <table class="svi-table" style="margin-top:14px;">
+        <div class="table-scroll"><table class="svi-table" style="margin-top:14px;">
           <thead><tr><th>Tier</th><th>Trigger</th><th>Automated Action</th><th>Status</th></tr></thead>
           <tbody>
             <tr><td>1 — Margin Call</td><td>80% maintenance margin</td><td>Warning + margin top-up request</td><td id="svi-tier-1"><span class="svi-chip neutral">Not triggered</span></td></tr>
             <tr><td>2 — Partial De-Risk</td><td>90% maintenance margin</td><td>Auto-reduce highest-risk positions</td><td id="svi-tier-2"><span class="svi-chip neutral">Not triggered</span></td></tr>
             <tr><td>3 — Full Liquidation</td><td>100% maintenance margin</td><td>Multi-tier ADL / full close-out</td><td id="svi-tier-3"><span class="svi-chip neutral">Not triggered</span></td></tr>
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       <div class="svi-section-title">Hard Position &amp; Drawdown Limits</div>
@@ -1001,23 +1001,23 @@
         <div class="svi-collateral-bar">
           ${collateral.map(c => `<span style="width:${c.pct}%;background:${c.color}">${c.pct}%</span>`).join("")}
         </div>
-        <table class="svi-table" style="margin-top:14px;">
+        <div class="table-scroll"><table class="svi-table" style="margin-top:14px;">
           <thead><tr><th>Asset</th><th>Portfolio Weight</th><th>Haircut</th><th>Eligible as Collateral</th></tr></thead>
           <tbody>
             ${collateral.map(c => `<tr><td>${c.name}</td><td>${c.pct}%</td><td>${c.haircut}</td><td><span class="svi-chip ok">Yes</span></td></tr>`).join("")}
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       <div class="svi-section-title">Tri-Party Settlement</div>
-      <table class="svi-table">
+      <div class="table-scroll"><table class="svi-table">
         <thead><tr><th>Custodian</th><th>Type</th><th>Status</th><th>Assets Held Off-Exchange</th><th></th></tr></thead>
         <tbody>
           <tr><td>Zodia Custody</td><td>Qualified Custodian</td><td><span class="svi-chip ok">Connected</span></td><td>$1,240,000.00</td><td><button class="svi-btn small" onclick="settleCustodian('Zodia Custody')">Settle</button></td></tr>
           <tr><td>Copper ClearLoop</td><td>Prime Broker Network</td><td><span class="svi-chip ok">Connected</span></td><td>$860,000.00</td><td><button class="svi-btn small" onclick="settleCustodian('Copper ClearLoop')">Settle</button></td></tr>
           <tr><td>Fireblocks</td><td>MPC Custody</td><td><span class="svi-chip warn">Pending KYB</span></td><td>$0.00</td><td><button class="svi-btn small ghost" disabled>Settle</button></td></tr>
         </tbody>
-      </table>
+      </table></div>
       <p class="svi-desc" style="margin-top:8px;">Trading against tri-party-held collateral lets institutions keep assets with an independent custodian instead of pre-funding the exchange directly, reducing counterparty risk.</p>
 
       <div class="svi-section-title">Netting &amp; Straight-Through Processing</div>

@@ -300,15 +300,30 @@ const SVO2 = (() => {
     ];
     mount.innerHTML = `
       <a href="index.html" class="brand">${logoLockup()}</a>
-      <nav class="main-nav">
+      <nav class="main-nav" id="main-nav">
         ${links.map(l => `<a href="${l.href}" class="${l.key === activePage ? "active" : ""}">${l.label}</a>`).join("")}
       </nav>
       <div class="wallet-area">
         <span id="wallet-status"><span class="dot"></span><span id="wallet-address-label"></span></span>
         <button class="btn btn-outline" id="connect-wallet-btn" onclick="SVO2.toggleWallet()">Connect Wallet</button>
+        <button class="nav-toggle" id="nav-toggle" onclick="SVO2.toggleMobileNav()" aria-label="Menu">
+          <span></span><span></span><span></span>
+        </button>
       </div>
+      <div class="nav-scrim" id="nav-scrim" onclick="SVO2.toggleMobileNav()"></div>
     `;
     updateWalletUI();
+  }
+
+  function toggleMobileNav() {
+    const nav = document.getElementById("main-nav");
+    const toggle = document.getElementById("nav-toggle");
+    const scrim = document.getElementById("nav-scrim");
+    if (!nav) return;
+    const open = nav.classList.toggle("open");
+    if (toggle) toggle.classList.toggle("open", open);
+    if (scrim) scrim.classList.toggle("open", open);
+    document.body.style.overflow = open ? "hidden" : "";
   }
 
   function toggleWallet() {
@@ -666,7 +681,7 @@ const SVO2 = (() => {
     state, creditTypes, marketNews, tokenomics, lifecycleStages, orderBook, recentTrades,
     trustClasses, verificationEvents, mintConditions, futuresContracts, optionsChain, stakingPools,
     performanceMetrics, royaltyProducts, tokenisationQueue,
-    fmt, fmtUsd, renderHeader, toggleWallet, openModal, closeModal, showToast, renderDonut, renderLine,
+    fmt, fmtUsd, renderHeader, toggleWallet, toggleMobileNav, openModal, closeModal, showToast, renderDonut, renderLine,
     logoMarkSvg, logoLockup, mulberry32, computeBetaAnalysis, computeStageBreakdown,
     renderSparkline, generateOHLC, renderCandleChart, renderOptionPayoff,
     quoteCurrencies, convertPrice, fmtQuote, AED_PER_USD,

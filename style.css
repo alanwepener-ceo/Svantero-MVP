@@ -61,6 +61,16 @@ a:hover{text-decoration:underline;}
 .main-nav a:hover{background:rgba(255,255,255,0.10);color:#fff;text-decoration:none;}
 .main-nav a.active{background:rgba(255,255,255,0.16);color:#fff;}
 
+.nav-toggle{
+  display:none;flex-direction:column;justify-content:center;align-items:center;gap:4px;
+  width:36px;height:36px;border:none;background:transparent;cursor:pointer;padding:0;flex-shrink:0;
+}
+.nav-toggle span{width:20px;height:2px;background:#fff;border-radius:2px;transition:transform .2s,opacity .2s;}
+.nav-toggle.open span:nth-child(1){transform:translateY(6px) rotate(45deg);}
+.nav-toggle.open span:nth-child(2){opacity:0;}
+.nav-toggle.open span:nth-child(3){transform:translateY(-6px) rotate(-45deg);}
+.nav-scrim{display:none;}
+
 .wallet-area{display:flex;align-items:center;gap:10px;}
 #wallet-status{font-size:12px;color:rgba(255,255,255,0.75);display:none;align-items:center;gap:6px;}
 #wallet-status .dot{width:8px;height:8px;border-radius:50%;background:#4ADE80;display:inline-block;}
@@ -242,7 +252,40 @@ tr:last-child td{border-bottom:none;}
 
 @media (max-width:900px){
   .grid-3,.grid-main,.grid-2{grid-template-columns:1fr;}
-  .main-nav{display:none;}
+
+  .site-header{padding:0 14px;}
+  .nav-toggle{display:flex;}
+  .main-nav{
+    display:flex;flex-direction:column;gap:2px;
+    position:fixed;top:64px;left:0;right:0;
+    background:var(--primary);
+    padding:8px 14px 14px;
+    box-shadow:0 8px 20px rgba(0,0,0,0.18);
+    transform:translateY(-8px);opacity:0;pointer-events:none;
+    transition:transform .18s ease,opacity .18s ease;
+    z-index:120;max-height:calc(100vh - 64px);overflow-y:auto;
+  }
+  .main-nav.open{transform:translateY(0);opacity:1;pointer-events:auto;}
+  .main-nav a{padding:12px 14px;font-size:15px;}
+  .nav-scrim.open{
+    display:block;position:fixed;inset:64px 0 0 0;background:rgba(0,0,0,0.35);z-index:110;
+  }
+}
+
+/* ---------- Horizontally-scrolling tables (mobile/tablet) ---------- */
+.table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.table-scroll table{width:100%;}
+
+/* ---------- Prevent iOS/mobile Safari auto-zoom on form focus ---------- */
+@media (max-width:1024px){
+  input,select,textarea{font-size:16px !important;}
+}
+
+/* ---------- Small-phone field stacking ---------- */
+@media (max-width:480px){
+  .svi-inline-fields,.tv-btn-group{flex-wrap:wrap;}
+  .svi-inline-fields{grid-template-columns:1fr;}
+  .btn-row{flex-wrap:wrap;}
 }
 
 /* ==========================================================================
@@ -267,7 +310,7 @@ tr:last-child td{border-bottom:none;}
   background:var(--svx-panel);border-bottom:1px solid var(--svx-border);
   padding:10px 20px;
 }
-.svx-tabs{display:flex;gap:4px;}
+.svx-tabs{display:flex;gap:4px;flex-wrap:wrap;}
 .svx-tab{
   padding:8px 14px;border-radius:7px;font-size:13px;font-weight:600;color:var(--svx-text-dim);
   cursor:pointer;border:1px solid transparent;
@@ -368,7 +411,7 @@ tr:last-child td{border-bottom:none;}
 }
 .svx-table{width:100%;border-collapse:collapse;font-size:12.5px;}
 .svx-table th{
-  text-align:left;color:var(--svx-text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;
+  text-align:left;background:transparent;color:var(--svx-text-dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;
   padding:6px 8px;border-bottom:1px solid var(--svx-border);font-weight:600;
 }
 .svx-table td{padding:7px 8px;border-bottom:1px solid var(--svx-border);color:var(--svx-text);}
@@ -410,6 +453,19 @@ tr:last-child td{border-bottom:none;}
   .svx-body{grid-template-columns:1fr;}
   .svx-sidebar,.svx-feed{min-height:auto;border:none;border-bottom:1px solid var(--svx-border);}
   .svx-grid-main,.svx-grid-trade{grid-template-columns:1fr;}
+  /* Show the trading panel first on narrow screens, watchlist and news below. */
+  .svx-main{order:1;}
+  .svx-sidebar{order:2;}
+  .svx-feed{order:3;}
+  .svx-account-strip{gap:14px;}
+}
+
+@media (max-width:640px){
+  .svx-topbar{padding:8px 12px;}
+  .svx-main{padding:12px 12px;}
+  .svx-sidebar,.svx-feed{padding:12px 12px;}
+  .tv-ticker{gap:12px;}
+  .page-wrap{padding:16px 14px 40px;}
 }
 
 /* ==========================================================================
@@ -536,7 +592,7 @@ tr:last-child td{border-bottom:none;}
 
 .svi-table{width:100%;border-collapse:collapse;font-size:12.5px;}
 .svi-table th{
-  text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--svx-text-dim);
+  text-align:left;background:transparent;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--svx-text-dim);
   border-bottom:1px solid var(--svx-border);padding:8px 10px;font-weight:600;
 }
 .svi-table td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--svx-text);}

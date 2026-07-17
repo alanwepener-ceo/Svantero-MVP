@@ -160,20 +160,20 @@
     </p>
 
     <h4 style="margin-top:16px;">Carbon Trust Classes</h4>
-    <table>
+    <div class="table-scroll"><table>
       <thead><tr><th>Class</th><th>Applies To</th><th>Origination Partner Bond</th><th>Verification Cadence</th></tr></thead>
       <tbody id="trust-class-body"></tbody>
-    </table>
+    </table></div>
 
     <h4 style="margin-top:18px;">Mint Authorisation Conditions</h4>
     <p style="font-size:13px;color:var(--grey);">A tokenisation request cannot be minted until every condition below is satisfied — there is no override path.</p>
     <ul id="mint-conditions-list" style="font-size:13px;color:var(--grey);padding-left:18px;line-height:1.7;"></ul>
 
     <h4 style="margin-top:18px;">Live Governance Feed</h4>
-    <table>
+    <div class="table-scroll"><table>
       <thead><tr><th>Project</th><th>Trust Class</th><th>Verifier</th><th>Status</th><th>Timestamp</th></tr></thead>
       <tbody id="governance-feed-body"></tbody>
-    </table>
+    </table></div>
   </div>
 
 </div>
@@ -235,14 +235,14 @@
         </div>
         <p style="font-size:11.5px;color:var(--grey-light);margin-bottom:8px;">${p.symbol} · ${p.location}</p>
         <p style="font-size:12.5px;color:var(--grey);margin-bottom:10px;">${p.underlying}</p>
-        <table style="font-size:12px;width:100%;margin-bottom:10px;">
+        <div class="table-scroll"><table style="font-size:12px;width:100%;margin-bottom:10px;">
           <tr><td style="color:var(--grey-light);padding:2px 0;">Price / token</td><td style="text-align:right;font-weight:600;">${SVO2.fmtUsd(p.priceUsd)}</td></tr>
           <tr><td style="color:var(--grey-light);padding:2px 0;">Total supply</td><td style="text-align:right;">${SVO2.fmt(p.totalSupply)} (${p.unitLabel} each)</td></tr>
           <tr><td style="color:var(--grey-light);padding:2px 0;">Term</td><td style="text-align:right;">${p.term}</td></tr>
           <tr><td style="color:var(--grey-light);padding:2px 0;">Projected 5-yr IRR</td><td style="text-align:right;">${(p.irr * 100).toFixed(0)}%</td></tr>
           <tr><td style="color:var(--grey-light);padding:2px 0;">MOIC</td><td style="text-align:right;">${p.moic.toFixed(2)}×</td></tr>
           <tr><td style="color:var(--grey-light);padding:2px 0;">Collateral LTV</td><td style="text-align:right;">${(p.ltv * 100).toFixed(1)}%</td></tr>
-        </table>
+        </table></div>
         <p style="font-size:11.5px;color:var(--grey);margin-bottom:10px;"><strong>Royalty:</strong> ${p.royaltyDesc}</p>
         <p style="font-size:10.5px;color:var(--grey-light);margin-bottom:10px;">${p.standard} · ${p.regulator}</p>
         <button class="btn btn-primary btn-block" onclick="openRoyaltyModal('${p.id}')">Invest</button>
@@ -274,10 +274,10 @@
         const perTokenTotal = (r.royalty + r.principal) * p.hectaresPerToken;
         return `<tr><td>${r.year}</td><td style="text-align:right;">${SVO2.fmtUsd(perTokenTotal * qty)}</td></tr>`;
       }).join("");
-      html += `<table style="width:100%;margin-top:8px;font-size:11.5px;">
+      html += `<div class="table-scroll"><table style="width:100%;margin-top:8px;font-size:11.5px;">
         <thead><tr><th>Year</th><th style="text-align:right;">Cash Flow (this holding)</th></tr></thead>
         <tbody>${rows}</tbody>
-      </table>`;
+      </table></div>`;
     }
     out.innerHTML = html;
   }
