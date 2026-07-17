@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <title>Svantero SVO₂ — Portfolio Management Platform (MVP)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Svantero SVO₂ Portfolio Management Platform — an illustrative MVP for staking SVO₂, holding tokenised carbon credits, and tracking portfolio performance. Simulated demo data only.">
+<meta property="og:title" content="Svantero SVO₂ — Portfolio Management Platform (MVP)">
+<meta property="og:description" content="Stake SVO₂, hold tokenised carbon credits, and track portfolio performance in one view. Illustrative demo.">
+<meta property="og:type" content="website">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http://www.w3.org/2000/svg%22%20viewBox%3D%220%200%20120%20120%22%3E%3Crect%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22%23282e35%22/%3E%3Cg%20transform%3D%22translate(15,14.865)%22%20fill%3D%22%23C9A227%22%3E%3Cpath%20d%3D%22M5,51h23.677L45,79.271L61.322,51H85v-6H64.786l19.63-34H5.584l19.63,34H5V51z%20M45,68.368L34.972,51h20.055L45,68.368z%20%20%20M14.765,16h60.47L58.492,45H31.508L14.765,16z%22/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -25,7 +29,7 @@
     </div>
   </div>
 
-  <!-- Top stat row: elements 1, 2, 3 -->
+  <!-- Top stat row -->
   <div class="grid grid-3" style="margin-bottom:16px;">
     <div class="card stat-card">
       <div class="label">Amount of SVO₂ Staked</div>
@@ -44,7 +48,7 @@
     </div>
   </div>
 
-  <!-- Main grid: left stat tiles + chart | staking panel -->
+  <!-- Main grid -->
   <div class="grid grid-main" style="margin-bottom:16px;">
 
     <div class="grid" style="grid-template-columns:1fr 1fr; align-content:start; gap:16px;">
@@ -74,12 +78,12 @@
       </div>
     </div>
 
-    <!-- Right: staking + buy panels, elements 11-14 -->
+    <!-- Right: staking + buy panels -->
     <div class="card">
       <h3>Stake / Unstake SVO₂</h3>
       <div class="field">
-        <label>Enter Number of SVO₂ to be Staked / Unstaked</label>
-        <input type="number" id="stake-amount" placeholder="e.g. 500" min="0">
+        <label for="stake-amount">Enter Number of SVO₂ to be Staked / Unstaked</label>
+        <input type="number" id="stake-amount" placeholder="e.g. 500" min="0" max="100000000">
       </div>
       <div class="btn-row" style="margin-bottom:18px;">
         <button class="btn btn-buy btn-block" onclick="doStake('stake')">Stake</button>
@@ -91,7 +95,7 @@
     </div>
   </div>
 
-  <!-- Bottom row: elements 9, 10 -->
+  <!-- Bottom row -->
   <div class="grid grid-2">
     <div class="card">
       <h3>List of Carbon Credit Types</h3>
@@ -115,9 +119,9 @@
 
 <!-- ===================== Modals ===================== -->
 
-<div class="modal-overlay" id="yield-modal">
+<div class="modal-overlay" id="yield-modal" aria-hidden="true">
   <div class="modal">
-    <div class="modal-head"><h4>Carbon Credit Yield per SVO₂</h4><button class="modal-close" onclick="SVO2.closeModal('yield-modal')">&times;</button></div>
+    <div class="modal-head"><h4>Carbon Credit Yield per SVO₂</h4><button class="modal-close" aria-label="Close" onclick="SVO2.closeModal('yield-modal')">&times;</button></div>
     <p style="font-size:13.5px;color:var(--grey);">
       Weighted average current price of carbon credits being distributed, divided by the price of SVO₂ (expressed
       as an annualised percentage yield).
@@ -126,41 +130,41 @@
       Yc = (Vt × Fr) / Sc
     </p>
     <p style="font-size:12px;color:var(--grey-light);">
-      Vt = transaction volume · Fr = platform fee rate · Sc = circulating supply. Distribution is recalculated
-      automatically every 30 minutes.
+      Vt = transaction volume · Fr = platform fee rate · Sc = circulating supply. The headline figure shown is the
+      current single-stake pool rate; distribution is recalculated automatically every 30 minutes.
     </p>
   </div>
 </div>
 
-<div class="modal-overlay" id="buy-svo-modal">
+<div class="modal-overlay" id="buy-svo-modal" aria-hidden="true">
   <div class="modal">
-    <div class="modal-head"><h4>Buy SVO₂</h4><button class="modal-close" onclick="SVO2.closeModal('buy-svo-modal')">&times;</button></div>
+    <div class="modal-head"><h4>Buy SVO₂</h4><button class="modal-close" aria-label="Close" onclick="SVO2.closeModal('buy-svo-modal')">&times;</button></div>
     <div class="field">
-      <label>Pay with</label>
+      <label for="buy-svo-currency">Pay with</label>
       <select id="buy-svo-currency"><option>USDT</option><option>Digital Dirham (D-AED)</option><option>BTC</option><option>ETH</option></select>
     </div>
     <div class="field">
-      <label>Amount to spend</label>
+      <label for="buy-svo-amount">Amount to spend</label>
       <input type="number" id="buy-svo-amount" placeholder="e.g. 1000" min="0">
     </div>
     <button class="btn btn-primary btn-block" onclick="confirmBuySvo()">Confirm Purchase</button>
-    <p class="modal-foot-note">Simulated transaction — settles instantly in this demo. No real funds are used.</p>
+    <p class="modal-foot-note">Simulated transaction — settles instantly in this demo. No real funds are used. BTC/ETH amounts are converted at indicative reference rates.</p>
   </div>
 </div>
 
-<div class="modal-overlay" id="buy-cc-modal">
+<div class="modal-overlay" id="buy-cc-modal" aria-hidden="true">
   <div class="modal">
-    <div class="modal-head"><h4>Buy / Sell Carbon Credits</h4><button class="modal-close" onclick="SVO2.closeModal('buy-cc-modal')">&times;</button></div>
+    <div class="modal-head"><h4>Buy / Sell Carbon Credits</h4><button class="modal-close" aria-label="Close" onclick="SVO2.closeModal('buy-cc-modal')">&times;</button></div>
     <div class="field">
-      <label>Credit type</label>
+      <label for="cc-type-select">Credit type</label>
       <select id="cc-type-select"></select>
     </div>
     <div class="field">
-      <label>Units</label>
+      <label for="cc-units">Units</label>
       <input type="number" id="cc-units" placeholder="e.g. 100" min="0">
     </div>
     <div class="field">
-      <label>Settle in</label>
+      <label for="cc-currency-select">Settle in</label>
       <select id="cc-currency-select">
         <option value="USDT">USDT</option>
         <option value="DAED">Digital Dirham (D-AED)</option>
@@ -177,15 +181,21 @@
 
 <script src="app.js"></script>
 <script>
+  if (!window.SVO2) {
+    document.querySelector(".page-wrap").innerHTML =
+      '<div class="disclaimer-banner">Couldn\'t load the demo engine (app.js). Make sure app.js is in the same folder as this page, then reload.</div>';
+  } else {
   SVO2.renderHeader("portfolio");
 
   document.getElementById("stat-staked").textContent = SVO2.fmt(SVO2.state.svoStaked) + " SVO₂";
   document.getElementById("stat-accumulated").textContent = SVO2.fmt(SVO2.state.accumulatedCredits) + " tCO₂e";
   document.getElementById("stat-redeemable").textContent = SVO2.fmt(SVO2.state.redeemableCredits) + " tCO₂e";
-  document.getElementById("stat-yield").textContent = "8.4% APY";
+  // Yield now derives from the single-stake pool rate (single source of truth) rather than a hardcoded literal.
+  document.getElementById("stat-yield").textContent = SVO2.stakingPools[0].apy.toFixed(1) + "% APY";
   document.getElementById("stat-price").textContent = SVO2.fmtUsd(SVO2.state.svoPrice);
-  document.getElementById("stat-fund").textContent = SVO2.fmt(1840000) + " tCO₂e";
-  document.getElementById("stat-remaining").textContent = SVO2.fmt(1650000) + " tCO₂e";
+  // Fund totals now come from SVO2.fundStats so this page can never drift from the platform figures.
+  document.getElementById("stat-fund").textContent = SVO2.fmt(SVO2.fundStats.creditsInFund) + " tCO₂e";
+  document.getElementById("stat-remaining").textContent = SVO2.fmt(SVO2.fundStats.remainingAfterDistribution) + " tCO₂e";
 
   SVO2.renderDonut(document.getElementById("portfolio-donut"), SVO2.creditTypes.map(c => ({ value: c.units, color: c.color })));
   document.getElementById("portfolio-legend").innerHTML = SVO2.creditTypes.map(c =>
@@ -204,7 +214,7 @@
     `<div class="news-item"><div class="src">${n.src}</div><div class="headline">${n.headline}</div></div>`
   ).join("");
 
-  function doStake(action) {
+  window.doStake = function (action) {
     const amt = parseFloat(document.getElementById("stake-amount").value);
     if (!amt || amt <= 0) { SVO2.showToast("Enter an amount to " + action + "."); return; }
     if (action === "stake") {
@@ -216,22 +226,23 @@
     }
     document.getElementById("stat-staked").textContent = SVO2.fmt(SVO2.state.svoStaked) + " SVO₂";
     document.getElementById("stake-amount").value = "";
-  }
+  };
 
-  function confirmBuySvo() {
+  window.confirmBuySvo = function () {
     const amt = parseFloat(document.getElementById("buy-svo-amount").value);
     const cur = document.getElementById("buy-svo-currency").value;
     if (!amt || amt <= 0) { SVO2.showToast("Enter an amount to spend."); return; }
-    // SVO2's USD price converted into whichever currency the amount was entered in.
-    let svoPriceInCur = SVO2.state.svoPrice;
-    if (cur === "Digital Dirham (D-AED)") svoPriceInCur = SVO2.convertPrice(SVO2.state.svoPrice, "DAED");
-    const purchased = amt / svoPriceInCur;
+    // Convert whatever currency the amount was entered in into USD first, then
+    // divide by the USD price of SVO₂. Fixes the prior bug where 1 BTC was
+    // treated as $1 (BTC/ETH weren't converted at all).
+    const usdSpent = SVO2.spendToUsd(amt, cur);
+    const purchased = usdSpent / SVO2.state.svoPrice;
     SVO2.closeModal("buy-svo-modal");
-    SVO2.showToast(`Purchased ~${SVO2.fmt(purchased, 1)} SVO₂ using ${SVO2.fmt(amt)} ${cur} (simulated).`);
+    SVO2.showToast(`Purchased ~${SVO2.fmt(purchased, 1)} SVO₂ using ${SVO2.fmt(amt)} ${cur} (≈ ${SVO2.fmtUsd(usdSpent)}, simulated).`);
     document.getElementById("buy-svo-amount").value = "";
-  }
+  };
 
-  function confirmCcTrade(side) {
+  window.confirmCcTrade = function (side) {
     const type = document.getElementById("cc-type-select").value;
     const units = parseFloat(document.getElementById("cc-units").value);
     const currency = document.getElementById("cc-currency-select").value;
@@ -242,6 +253,7 @@
     SVO2.closeModal("buy-cc-modal");
     SVO2.showToast(`${side === "buy" ? "Bought" : "Sold"} ${SVO2.fmt(units)} units of ${type} for ${totalDisplay} (simulated).`);
     document.getElementById("cc-units").value = "";
+  };
   }
 </script>
 </body>

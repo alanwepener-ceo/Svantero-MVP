@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <title>Svantero SVO₂ — Carbon Credit Lifecycle Management (MVP)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Carbon Credit Lifecycle Management — every tokenised Svantero SVO₂ credit moves through seven managed stages from verification to permanent retirement. Illustrative MVP.">
+<meta property="og:title" content="Svantero SVO₂ — Carbon Credit Lifecycle Management (MVP)">
+<meta property="og:description" content="Seven managed stages from verification to permanent on-chain retirement. Illustrative demo.">
+<meta property="og:type" content="website">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http://www.w3.org/2000/svg%22%20viewBox%3D%220%200%20120%20120%22%3E%3Crect%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22%23282e35%22/%3E%3Cg%20transform%3D%22translate(15,14.865)%22%20fill%3D%22%23C9A227%22%3E%3Cpath%20d%3D%22M5,51h23.677L45,79.271L61.322,51H85v-6H64.786l19.63-34H5.584l19.63,34H5V51z%20M45,68.368L34.972,51h20.055L45,68.368z%20%20%20M14.765,16h60.47L58.492,45H31.508L14.765,16z%22/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -79,11 +83,11 @@
     <div class="card">
       <h3>Retire a Credit — Demo</h3>
       <div class="field">
-        <label>Credit type</label>
+        <label for="retire-type">Credit type</label>
         <select id="retire-type"></select>
       </div>
       <div class="field">
-        <label>Units to retire (tCO₂e)</label>
+        <label for="retire-units">Units to retire (tCO₂e)</label>
         <input type="number" id="retire-units" placeholder="e.g. 50" min="0">
       </div>
       <button class="btn btn-primary btn-block" onclick="retireCredit()">Retire Credit</button>
@@ -103,6 +107,10 @@
 
 <script src="app.js"></script>
 <script>
+  if (!window.SVO2) {
+    document.querySelector(".page-wrap").innerHTML =
+      '<div class="disclaimer-banner">Couldn\'t load the demo engine (app.js). Make sure app.js is in the same folder as this page, then reload.</div>';
+  } else {
   SVO2.renderHeader("lifecycle");
 
   const stepperEl = document.getElementById("stepper");
@@ -143,14 +151,14 @@
 
   function paintStepper(activeIdx) {
     stepperEl.innerHTML = SVO2.lifecycleStages.map((s, i) =>
-      `<div class="step ${i === activeIdx ? "active" : ""}" onclick="selectStage(${i})">
+      `<div class="step ${i === activeIdx ? "active" : ""}" onclick="selectStage(${i})" aria-pressed="${i === activeIdx}">
         <div class="num">${i + 1}</div><div class="name">${s.name}</div>
       </div>`
     ).join("");
     detailEl.textContent = SVO2.lifecycleStages[activeIdx].desc;
     document.getElementById("governance-signal").innerHTML = governanceSignalHtml(SVO2.lifecycleStages[activeIdx].name);
   }
-  function selectStage(i) { paintStepper(i); }
+  window.selectStage = function (i) { paintStepper(i); };
   paintStepper(0);
 
   /* ===================== Carbon Credits by Lifecycle Stage ===================== */
@@ -194,7 +202,7 @@
   const retireSelect = document.getElementById("retire-type");
   retireSelect.innerHTML = SVO2.creditTypes.map(c => `<option value="${c.type}">${c.type}</option>`).join("");
 
-  function retireCredit() {
+  window.retireCredit = function () {
     const type = document.getElementById("retire-type").value;
     const units = parseFloat(document.getElementById("retire-units").value);
     if (!units || units <= 0) { SVO2.showToast("Enter a number of units to retire."); return; }
@@ -205,6 +213,7 @@
     document.getElementById("retire-result").style.display = "block";
     SVO2.showToast(`Retired ${SVO2.fmt(units)} tCO₂e of ${type} (simulated).`);
     document.getElementById("retire-units").value = "";
+  };
   }
 </script>
 </body>

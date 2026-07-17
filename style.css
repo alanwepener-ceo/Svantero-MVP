@@ -701,3 +701,121 @@ tr:last-child td{border-bottom:none;}
 .svi-flowline .svi-arrow{color:var(--svx-text-dim);font-size:16px;}
 
 .svi-note{font-size:11px;color:var(--svx-text-dim);border-top:1px solid var(--svx-border);margin-top:16px;padding-top:12px;line-height:1.6;}
+
+/* ==========================================================================
+   Accessibility — visible focus for keyboard users. Applies to the many
+   div/span controls that app.js now exposes as role="button" tabindex="0",
+   plus native controls. Gold ring on the dark SVX shell, primary elsewhere.
+   ========================================================================== */
+:focus-visible{outline:2px solid var(--secondary);outline-offset:2px;border-radius:4px;}
+.svx-shell :focus-visible{outline:2px solid var(--svi-gold-bright);outline-offset:2px;}
+[role="button"]{cursor:pointer;}
+.modal-close:focus-visible{outline:2px solid var(--primary);}
+/* Respect reduced-motion preferences for the animated feed rows/toasts. */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms !important;transition-duration:.001ms !important;}
+}
+
+/* ==========================================================================
+   Spread-Analysis study (Bilateral Executions + Data & Analytics)
+   ========================================================================== */
+.spread-analysis{display:flex;flex-direction:column;gap:12px;}
+.spread-top{display:grid;grid-template-columns:minmax(0,1fr) 200px;gap:12px;align-items:stretch;}
+.spread-bottom{display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:12px;align-items:stretch;}
+.spread-chart-main,.spread-chart-spread,.spread-chart-hist,.spread-summary{
+  background:var(--svx-panel-alt);border:1px solid var(--svx-border);border-radius:8px;padding:9px 11px;
+}
+.spread-panel-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--svx-text-dim);margin-bottom:6px;}
+.spread-summary-title{
+  font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--svi-gold-bright);
+  font-weight:700;margin-bottom:8px;
+}
+.spread-summary-row{
+  display:flex;justify-content:space-between;gap:10px;font-size:11px;font-family:var(--svi-mono);
+  padding:3.5px 0;border-bottom:1px solid rgba(255,255,255,.04);
+}
+.spread-summary-row:last-child{border-bottom:none;}
+.spread-summary-row span:first-child{color:var(--svx-text-dim);}
+.spread-summary-row span:last-child{color:var(--svx-text);font-weight:600;}
+.spread-picker{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;margin-bottom:12px;}
+@media (max-width:900px){
+  .spread-top,.spread-bottom{grid-template-columns:1fr;}
+  .spread-picker{grid-template-columns:1fr 1fr;}
+}
+
+/* ==========================================================================
+   Bilateral Executions — OTC / TOMS-style dealer desk
+   ========================================================================== */
+.toms-blotter{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--svx-border);border-radius:8px;}
+.toms-table{width:100%;border-collapse:collapse;font-family:var(--svi-mono);font-size:11px;min-width:860px;}
+.toms-table th{
+  position:sticky;top:0;background:var(--svx-panel);color:var(--svx-text-dim);text-align:right;
+  font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;
+  padding:7px 9px;border-bottom:1px solid var(--svx-border);white-space:nowrap;
+}
+.toms-table th:nth-child(1),.toms-table th:nth-child(2){text-align:left;}
+.toms-table td{padding:6px 9px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--svx-text);text-align:right;white-space:nowrap;}
+.toms-table td:nth-child(1),.toms-table td:nth-child(2){text-align:left;}
+.toms-table tr{cursor:pointer;}
+.toms-table tbody tr:hover td{background:rgba(201,162,39,.06);}
+.toms-table tr.selected td{background:rgba(201,162,39,.12);}
+.toms-sec{color:var(--svx-text);font-weight:600;}
+.toms-px-bid{color:var(--svx-buy);}
+.toms-px-ask{color:var(--svx-sell);}
+.toms-sz-cell{position:relative;min-width:78px;}
+.toms-sz-bar{position:absolute;top:3px;bottom:3px;right:9px;background:rgba(201,162,39,.28);border-radius:2px;z-index:0;}
+.toms-sz-cell span{position:relative;z-index:1;}
+.axe-tag{
+  display:inline-block;font-family:"Segoe UI",Arial,sans-serif;font-size:8.5px;font-weight:700;letter-spacing:.04em;
+  padding:1px 5px;border-radius:3px;background:var(--svi-gold);color:var(--svx-bg);
+}
+.axe-tag.runz{background:var(--svx-buy);}
+.axe-tag.none{background:transparent;color:var(--svx-text-dim);border:1px solid var(--svx-border);}
+.toms-score{display:inline-block;width:46px;height:8px;border-radius:2px;background:linear-gradient(90deg,var(--svi-gold),transparent);vertical-align:middle;}
+
+.rfq-cpty-list{display:flex;flex-direction:column;gap:5px;margin:4px 0 12px;}
+.rfq-cpty-opt{
+  display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--svx-text);
+  padding:6px 9px;border:1px solid var(--svx-border);border-radius:6px;background:var(--svx-panel-alt);cursor:pointer;
+}
+.rfq-cpty-opt input{accent-color:var(--svi-gold);}
+.rfq-cpty-opt:hover{border-color:var(--svi-gold-dim);}
+.rfq-quote-row{
+  display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center;font-family:var(--svi-mono);
+  font-size:11.5px;padding:7px 10px;border:1px solid var(--svx-border);border-radius:6px;margin-bottom:5px;background:var(--svx-panel-alt);
+}
+.rfq-quote-row.best{border-color:var(--svi-gold);background:var(--svi-gold-dim);}
+.rfq-quote-row .cpty{font-family:"Segoe UI",Arial,sans-serif;color:var(--svx-text);}
+.rfq-quote-row .q-px{color:var(--svx-text);font-weight:700;}
+.rfq-quote-badge{font-size:9px;font-weight:700;color:var(--svi-gold-bright);text-transform:uppercase;letter-spacing:.04em;}
+
+.cpty-panel-table{width:100%;border-collapse:collapse;font-size:11.5px;}
+.cpty-panel-table th{
+  text-align:left;color:var(--svx-text-dim);font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;
+  padding:6px 8px;border-bottom:1px solid var(--svx-border);font-weight:600;
+}
+.cpty-panel-table td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--svx-text);}
+.cpty-activity{font-family:var(--svi-mono);font-size:11px;}
+.cpty-activity .sell{color:var(--svx-sell);}
+.cpty-activity .buy{color:var(--svx-buy);}
+.cpty-fb{display:inline-flex;gap:6px;}
+.cpty-fb button{
+  background:none;border:1px solid var(--svx-border);border-radius:5px;color:var(--svx-text-dim);
+  cursor:pointer;font-size:11px;padding:2px 6px;line-height:1;
+}
+.cpty-fb button:hover{color:var(--svx-text);border-color:var(--svi-gold-dim);}
+.cpty-fb button.up.on{color:var(--svx-buy);border-color:var(--svx-buy);}
+.cpty-fb button.down.on{color:var(--svx-sell);border-color:var(--svx-sell);}
+
+.settle-status{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:2px 7px;border-radius:20px;}
+.settle-status.pending{background:rgba(218,185,72,.16);color:var(--svi-gold-bright);}
+.settle-status.confirmed{background:rgba(92,143,214,.16);color:#7fa8e6;}
+.settle-status.settled{background:var(--svi-buy-bg);color:var(--svx-buy);}
+
+.bilateral-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;}
+@media (max-width:1000px){.bilateral-grid{grid-template-columns:1fr;}}
+
+/* Small helper utilities (reduce inline styles going forward) */
+.u-mono{font-family:var(--svi-mono);}
+.u-dim{color:var(--svx-text-dim);}
+.u-right{text-align:right;}

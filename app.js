@@ -4,7 +4,7 @@
    or exchange connection is made — all data and actions are simulated.
    ========================================================================== */
 
-const SVO2 = (() => {
+window.SVO2 = (() => {
 
   const state = {
     walletConnected: false,
@@ -250,6 +250,29 @@ const SVO2 = (() => {
   ];
   const AED_PER_USD = 3.6725;
 
+  /* ---------------- Centralised economic constants ----------------
+     Single source of truth for headline figures that previously appeared
+     as duplicated literals across pages (account equity, platform fund
+     totals, and indicative crypto reference rates). Import these instead
+     of hardcoding, so a change in one place can never silently contradict
+     another screen. */
+  const ACCOUNT_BASE_EQUITY = 38311.83;           // SVX main trading desk starting equity (USD)
+  const fundStats = {
+    creditsInFund: 1840000,                        // tCO2e currently held by the platform fund
+    remainingAfterDistribution: 1650000,           // tCO2e left after the current distribution cycle
+  };
+  // Indicative USD reference rates for non-stable settlement currencies, used
+  // only to size simulated "Buy SVO2" spends entered in BTC or ETH so the
+  // resulting quantity is sane rather than treating 1 BTC as $1.
+  const CRYPTO_USD = { BTC: 68000, ETH: 3500, USDT: 1 };
+  function spendToUsd(amount, currencyLabel) {
+    const c = String(currencyLabel);
+    if (c.includes("Dirham") || c === "DAED") return amount / AED_PER_USD;
+    if (c.startsWith("BTC")) return amount * CRYPTO_USD.BTC;
+    if (c.startsWith("ETH")) return amount * CRYPTO_USD.ETH;
+    return amount; // USDT / USD ≈ 1:1
+  }
+
   function convertPrice(usdPrice, quoteKey) {
     if (quoteKey === "DAED") return usdPrice * AED_PER_USD;
     if (quoteKey === "SVO2") return usdPrice / state.svoPrice;
@@ -354,15 +377,79 @@ const SVO2 = (() => {
     }
   }
 
-  /* ---------------- Modal helpers ---------------- */
+  /* ---------------- Modal helpers (accessible) ---------------- */
+  let lastFocusedBeforeModal = null;
   function openModal(id) {
     const el = document.getElementById(id);
-    if (el) el.classList.add("open");
+    if (!el) return;
+    lastFocusedBeforeModal = document.activeElement;
+    el.classList.add("open");
+    el.setAttribute("aria-hidden", "false");
+    const dialog = el.querySelector(".modal");
+    if (dialog) {
+      dialog.setAttribute("role", "dialog");
+      dialog.setAttribute("aria-modal", "true");
+    }
+    // Move focus into the dialog for keyboard and screen-reader users.
+    const focusTarget = el.querySelector(".modal input,.modal select,.modal button,.modal [tabindex]");
+    if (focusTarget) setTimeout(() => focusTarget.focus(), 20);
   }
   function closeModal(id) {
     const el = document.getElementById(id);
-    if (el) el.classList.remove("open");
+    if (!el) return;
+    el.classList.remove("open");
+    el.setAttribute("aria-hidden", "true");
+    if (lastFocusedBeforeModal && typeof lastFocusedBeforeModal.focus === "function") {
+      lastFocusedBeforeModal.focus();
+      lastFocusedBeforeModal = null;
+    }
   }
+  function closeTopModal() {
+    const open = document.querySelector(".modal-overlay.open");
+    if (open && open.id) closeModal(open.id);
+  }
+
+  /* ---------------- Accessibility & interaction init ----------------
+     A lot of the UI uses <div>/<span> with onclick for tabs, watchlist
+     rows, stepper steps, etc. This makes every such control keyboard-
+     operable (Tab to focus, Enter/Space to activate) and announces it as a
+     button to assistive tech — without having to hand-edit every template.
+     Also wires Escape-to-close and overlay-click-close for all modals. */
+  function makeClickablesAccessible(root) {
+    const scope = root && root.querySelectorAll ? root : document;
+    const nodes = scope.querySelectorAll("[onclick]:not(button):not(a):not(input):not(select):not(textarea):not([data-a11y])");
+    nodes.forEach(n => {
+      n.setAttribute("data-a11y", "1");
+      if (!n.hasAttribute("role")) n.setAttribute("role", "button");
+      if (!n.hasAttribute("tabindex")) n.setAttribute("tabindex", "0");
+    });
+  }
+  function initA11y() {
+    makeClickablesAccessible(document);
+    // Re-scan when pages re-render panels (SVX, lifecycle, etc.).
+    if (window.MutationObserver) {
+      const obs = new MutationObserver(muts => {
+        for (const m of muts) if (m.addedNodes && m.addedNodes.length) { makeClickablesAccessible(document); break; }
+      });
+      obs.observe(document.body, { childList: true, subtree: true });
+    }
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape") { closeTopModal(); return; }
+      if ((e.key === "Enter" || e.key === " ") &&
+          e.target.matches && e.target.matches('[role="button"][onclick],[data-a11y][onclick]')) {
+        e.preventDefault();
+        e.target.click();
+      }
+    });
+    // Click on the dimmed overlay (but not the dialog itself) closes the modal.
+    document.addEventListener("click", e => {
+      if (e.target.classList && e.target.classList.contains("modal-overlay") && e.target.classList.contains("open")) {
+        closeModal(e.target.id);
+      }
+    });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initA11y);
+  else initA11y();
 
   /* ---------------- Toast ---------------- */
   let toastTimer = null;
@@ -668,6 +755,184 @@ const SVO2 = (() => {
     });
   }
 
+  /* ==========================================================================
+     Spread-Analysis charting engine (Bloomberg-style)
+     Renders a two-instrument study: a dual-axis price overlay, a spread
+     (A − B) subchart with its mean line, a horizontal distribution histogram
+     of the spread, and a computed summary-statistics block. All deterministic
+     off seeded RNG so the study is stable across reloads.
+     ========================================================================== */
+
+  // Deterministic close-price series for one instrument (reuses the OHLC
+  // generator so a spread study and a candle chart of the same seed agree).
+  function generateSeries(basePrice, count, seed, vol = 0.02) {
+    return generateOHLC(basePrice, count, seed, vol).map(c => c.close);
+  }
+
+  function median(arr) {
+    const s = [...arr].sort((a, b) => a - b);
+    const m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  }
+
+  function computeSpreadStats(spread) {
+    const n = spread.length;
+    const last = spread[n - 1];
+    const mean = spread.reduce((a, b) => a + b, 0) / n;
+    const variance = spread.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
+    const stdev = Math.sqrt(variance);
+    const high = Math.max(...spread);
+    const low = Math.min(...spread);
+    // Percentile rank of the current level within the historical range.
+    const below = spread.filter(v => v <= last).length;
+    const percentile = (below / n) * 100;
+    return {
+      last, mean, offAvg: last - mean, median: median(spread),
+      stdev, zScore: stdev ? (last - mean) / stdev : 0,
+      high, low, percentile,
+    };
+  }
+
+  // Buckets the spread series into a frequency histogram (for the distribution
+  // panel). Returns { bins:[{lo,hi,mid,count}], maxCount }.
+  function histogram(values, binCount = 24) {
+    const lo = Math.min(...values), hi = Math.max(...values);
+    const span = (hi - lo) || 1;
+    const bins = Array.from({ length: binCount }, (_, i) => ({
+      lo: lo + (span * i) / binCount,
+      hi: lo + (span * (i + 1)) / binCount,
+      mid: lo + (span * (i + 0.5)) / binCount,
+      count: 0,
+    }));
+    values.forEach(v => {
+      let idx = Math.floor(((v - lo) / span) * binCount);
+      if (idx >= binCount) idx = binCount - 1;
+      if (idx < 0) idx = 0;
+      bins[idx].count++;
+    });
+    return { bins, maxCount: Math.max(...bins.map(b => b.count), 1) };
+  }
+
+  /* Main renderer. opts: { seriesA, seriesB, labelA, labelB, unitA, unitB }.
+     Returns the computed spread stats so the caller can drive extra UI. */
+  function renderSpreadAnalysis(container, opts) {
+    const A = opts.seriesA, B = opts.seriesB;
+    const n = Math.min(A.length, B.length);
+    const labelA = opts.labelA || "A", labelB = opts.labelB || "B";
+    const spread = [];
+    for (let i = 0; i < n; i++) spread.push(A[i] - B[i]);
+    const stats = computeSpreadStats(spread);
+
+    const colA = "#eef0f2", colB = "#C9A227";
+    const grid = "#262b31", dim = "#7a828c";
+    const mono = "font-family:Consolas,Menlo,monospace";
+
+    /* ---- Panel 1: dual-axis overlay ---- */
+    const w = 760, h = 240, padL = 46, padR = 52, padT = 14, padB = 22;
+    const plotW = w - padL - padR, plotH = h - padT - padB;
+    const scale = (vals) => { const mn = Math.min(...vals), mx = Math.max(...vals); return { mn, mx, r: (mx - mn) || 1 }; };
+    const sA = scale(A), sB = scale(B);
+    const xAt = i => padL + (i / (n - 1)) * plotW;
+    const yA = v => padT + (1 - (v - sA.mn) / sA.r) * plotH;
+    const yB = v => padT + (1 - (v - sB.mn) / sB.r) * plotH;
+
+    let p1 = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" style="display:block;">`;
+    for (let g = 0; g <= 4; g++) {
+      const y = padT + (plotH * g) / 4;
+      p1 += `<line x1="${padL}" y1="${y}" x2="${w - padR}" y2="${y}" stroke="${grid}" stroke-width="1"/>`;
+      const va = sA.mx - (sA.r * g) / 4, vb = sB.mx - (sB.r * g) / 4;
+      p1 += `<text x="${padL - 5}" y="${y + 3}" fill="${colA}" font-size="9" text-anchor="end" style="${mono}">${va.toFixed(1)}</text>`;
+      p1 += `<text x="${w - padR + 5}" y="${y + 3}" fill="${colB}" font-size="9" style="${mono}">${vb.toFixed(1)}</text>`;
+    }
+    p1 += `<polyline points="${A.map((v, i) => `${xAt(i).toFixed(1)},${yA(v).toFixed(1)}`).join(" ")}" fill="none" stroke="${colA}" stroke-width="1.6"/>`;
+    p1 += `<polyline points="${B.map((v, i) => `${xAt(i).toFixed(1)},${yB(v).toFixed(1)}`).join(" ")}" fill="none" stroke="${colB}" stroke-width="1.6"/>`;
+    p1 += `<text x="${padL + 4}" y="${padT + 10}" fill="${colA}" font-size="10" style="${mono}">${labelA} (L)  ${A[n - 1].toFixed(2)}</text>`;
+    p1 += `<text x="${padL + 4}" y="${padT + 23}" fill="${colB}" font-size="10" style="${mono}">${labelB} (R)  ${B[n - 1].toFixed(2)}</text>`;
+    p1 += `</svg>`;
+
+    /* ---- Panel 2: spread subchart (A − B) with mean line ---- */
+    const w2 = 520, h2 = 150, p2L = 46, p2R = 12, p2T = 12, p2B = 20;
+    const pw2 = w2 - p2L - p2R, ph2 = h2 - p2T - p2B;
+    const smn = Math.min(...spread), smx = Math.max(...spread), sr = (smx - smn) || 1;
+    const x2 = i => p2L + (i / (n - 1)) * pw2;
+    const y2 = v => p2T + (1 - (v - smn) / sr) * ph2;
+    let p2 = `<svg viewBox="0 0 ${w2} ${h2}" width="100%" height="${h2}" preserveAspectRatio="none" style="display:block;">`;
+    for (let g = 0; g <= 3; g++) {
+      const y = p2T + (ph2 * g) / 3;
+      p2 += `<line x1="${p2L}" y1="${y}" x2="${w2 - p2R}" y2="${y}" stroke="${grid}" stroke-width="1"/>`;
+      p2 += `<text x="${p2L - 5}" y="${y + 3}" fill="${dim}" font-size="9" text-anchor="end" style="${mono}">${(smx - (sr * g) / 3).toFixed(1)}</text>`;
+    }
+    const areaPts = `${x2(0).toFixed(1)},${y2(smn).toFixed(1)} ` +
+      spread.map((v, i) => `${x2(i).toFixed(1)},${y2(v).toFixed(1)}`).join(" ") +
+      ` ${x2(n - 1).toFixed(1)},${y2(smn).toFixed(1)}`;
+    p2 += `<polygon points="${areaPts}" fill="${colB}" opacity="0.14"/>`;
+    p2 += `<polyline points="${spread.map((v, i) => `${x2(i).toFixed(1)},${y2(v).toFixed(1)}`).join(" ")}" fill="none" stroke="${colB}" stroke-width="1.6"/>`;
+    const meanY = y2(stats.mean);
+    p2 += `<line x1="${p2L}" y1="${meanY.toFixed(1)}" x2="${w2 - p2R}" y2="${meanY.toFixed(1)}" stroke="${dim}" stroke-width="1" stroke-dasharray="4,3"/>`;
+    p2 += `<text x="${w2 - p2R - 2}" y="${meanY - 3}" fill="${dim}" font-size="9" text-anchor="end" style="${mono}">mean ${stats.mean.toFixed(1)}</text>`;
+    const lastY2 = y2(stats.last);
+    p2 += `<line x1="${p2L}" y1="${lastY2.toFixed(1)}" x2="${w2 - p2R}" y2="${lastY2.toFixed(1)}" stroke="${colB}" stroke-width="1" stroke-dasharray="2,2"/>`;
+    p2 += `<circle cx="${x2(n - 1).toFixed(1)}" cy="${lastY2.toFixed(1)}" r="3" fill="${colB}"/>`;
+    p2 += `</svg>`;
+
+    /* ---- Panel 3: horizontal distribution histogram ---- */
+    const hg = histogram(spread, 22);
+    const w3 = 190, h3 = 150, p3T = 12, p3B = 20, p3R = 8, p3L = 6;
+    const ph3 = h3 - p3T - p3B, barsW = w3 - p3L - p3R;
+    const yBin = mid => p3T + (1 - (mid - smn) / sr) * ph3;
+    let p3 = `<svg viewBox="0 0 ${w3} ${h3}" width="100%" height="${h3}" preserveAspectRatio="none" style="display:block;">`;
+    const binH = Math.max(2, (ph3 / hg.bins.length) - 1);
+    hg.bins.forEach(b => {
+      const bw = (b.count / hg.maxCount) * barsW;
+      const y = yBin(b.mid) - binH / 2;
+      const within = b.mid <= stats.last;
+      p3 += `<rect x="${p3L}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${binH.toFixed(1)}" fill="${colB}" opacity="${within ? 0.75 : 0.3}"/>`;
+    });
+    const mY = yBin(stats.mean), lY = yBin(stats.last);
+    p3 += `<line x1="${p3L}" y1="${mY.toFixed(1)}" x2="${w3 - p3R}" y2="${mY.toFixed(1)}" stroke="${dim}" stroke-width="1" stroke-dasharray="3,2"/>`;
+    p3 += `<line x1="${p3L}" y1="${lY.toFixed(1)}" x2="${w3 - p3R}" y2="${lY.toFixed(1)}" stroke="${colA}" stroke-width="1"/>`;
+    p3 += `<text x="${w3 - p3R}" y="${lY - 3}" fill="${colA}" font-size="8.5" text-anchor="end" style="${mono}">${stats.last.toFixed(1)}</text>`;
+    p3 += `</svg>`;
+
+    /* ---- Summary statistics block ---- */
+    const rows = [
+      ["Last", stats.last.toFixed(4)],
+      ["Mean", stats.mean.toFixed(4)],
+      ["Off Avg", (stats.offAvg >= 0 ? "+" : "") + stats.offAvg.toFixed(4)],
+      ["Median", stats.median.toFixed(4)],
+      ["StDev", stats.stdev.toFixed(4)],
+      ["StDev from Mean", (stats.zScore >= 0 ? "+" : "") + stats.zScore.toFixed(4)],
+      ["Percentile", stats.percentile.toFixed(1) + "%"],
+      ["High", stats.high.toFixed(4)],
+      ["Low", stats.low.toFixed(4)],
+    ];
+    const summary = `<div class="spread-summary"><div class="spread-summary-title">Spread Summary</div>${
+      rows.map(([k, v]) => `<div class="spread-summary-row"><span>${k}</span><span>${v}</span></div>`).join("")
+    }</div>`;
+
+    container.innerHTML = `
+      <div class="spread-analysis">
+        <div class="spread-top">
+          <div class="spread-chart-main">
+            <div class="spread-panel-label">Price overlay — <span style="color:${colA}">${labelA}</span> vs <span style="color:${colB}">${labelB}</span></div>
+            ${p1}
+          </div>
+          ${summary}
+        </div>
+        <div class="spread-bottom">
+          <div class="spread-chart-spread">
+            <div class="spread-panel-label">Spread (${labelA} − ${labelB})</div>
+            ${p2}
+          </div>
+          <div class="spread-chart-hist">
+            <div class="spread-panel-label">Distribution</div>
+            ${p3}
+          </div>
+        </div>
+      </div>`;
+    return stats;
+  }
+
   const performanceMetrics = {
     winRate: 0.62,
     realisedPnl: 184320,
@@ -685,5 +950,7 @@ const SVO2 = (() => {
     logoMarkSvg, logoLockup, mulberry32, computeBetaAnalysis, computeStageBreakdown,
     renderSparkline, generateOHLC, renderCandleChart, renderOptionPayoff,
     quoteCurrencies, convertPrice, fmtQuote, AED_PER_USD,
+    ACCOUNT_BASE_EQUITY, fundStats, CRYPTO_USD, spendToUsd,
+    generateSeries, computeSpreadStats, histogram, renderSpreadAnalysis, median,
   };
 })();

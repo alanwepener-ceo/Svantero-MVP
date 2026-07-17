@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <title>SVX — Svantero Decentralised Carbon Exchange (MVP)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="SVX — Svantero's Decentralised Carbon Exchange. Spot, derivatives, staking, market risk, and an institutional desk with OTC bilateral executions, all powered by SVO₂. Illustrative MVP.">
+<meta property="og:title" content="SVX — Svantero Decentralised Carbon Exchange (MVP)">
+<meta property="og:description" content="Spot, derivatives, staking, risk, and an institutional OTC desk — powered by SVO₂. Illustrative demo.">
+<meta property="og:type" content="website">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http://www.w3.org/2000/svg%22%20viewBox%3D%220%200%20120%20120%22%3E%3Crect%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22%23282e35%22/%3E%3Cg%20transform%3D%22translate(15,14.865)%22%20fill%3D%22%23C9A227%22%3E%3Cpath%20d%3D%22M5,51h23.677L45,79.271L61.322,51H85v-6H64.786l19.63-34H5.584l19.63,34H5V51z%20M45,68.368L34.972,51h20.055L45,68.368z%20%20%20M14.765,16h60.47L58.492,45H31.508L14.765,16z%22/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -15,17 +19,17 @@
   <div class="svx-topbar">
     <div class="svx-tabs" id="svx-tabs"></div>
     <div class="svx-account-strip">
-      <div>Funds<b>$38,311.83</b></div>
+      <div>Funds<b id="acct-funds">—</b></div>
       <div>Profit/Loss<b id="acct-pnl">$0.00</b></div>
       <div>Margin<b id="acct-margin">$0.00</b></div>
-      <div>Available<b id="acct-available">$38,311.83</b></div>
-      <div>Equity<b id="acct-equity">$38,311.83</b></div>
+      <div>Available<b id="acct-available">—</b></div>
+      <div>Equity<b id="acct-equity">—</b></div>
     </div>
   </div>
 
   <div class="svx-body">
     <aside class="svx-sidebar">
-      <input class="svx-search" placeholder="Search markets…">
+      <input class="svx-search" id="svx-search" aria-label="Search markets" placeholder="Search markets…" oninput="filterMarkets(this.value)">
       <div class="svx-side-head">Watchlist — Tokenised Credits</div>
       <div id="svx-watchlist"></div>
       <div class="svx-side-head">Account</div>
@@ -58,7 +62,13 @@
 
 <script src="app.js"></script>
 <script>
+if (!window.SVO2) {
+  document.querySelector(".svx-shell").innerHTML =
+    '<div style="padding:40px;color:#eef0f2;font-family:Segoe UI,Arial,sans-serif;">Couldn\'t load the demo engine (app.js). Make sure app.js is in the same folder as this page, then reload.</div>';
+} else {
   SVO2.renderHeader("svx");
+
+  const BASE_EQUITY = SVO2.ACCOUNT_BASE_EQUITY;
 
   const svxState = {
     tab: "spot",
@@ -72,18 +82,19 @@
     selectedOptionIdx: 0,
     selectedOptionSide: "buy",
     futureQty: {},
-    tradeMode: "orderbook",   // "orderbook" | "swap"
-    swapDir: "quoteToBase",   // "quoteToBase" (buy) | "baseToQuote" (sell)
+    tradeMode: "orderbook",
+    swapDir: "quoteToBase",
     swapSlippage: 0.5,
-    pools: {},                // AMM reserve cache, keyed by `${instrumentIdx}_${quoteCcy}`
+    pools: {},
+    marketFilter: "",
 
     // ---- Institutional desk ----
     orderType: "market",
     lastRiskResult: null,
     execLog: [],
-    sviSection: "risk",
+    sviSection: "bilateral",   // Bilateral Executions is the first/default institutional view
     subAccounts: [
-      { id: "main", name: "Main Trading Desk", equity: 38311.83, maxOrderSize: 5000, maxDrawdown: 15, allocPct: 60 },
+      { id: "main", name: "Main Trading Desk", equity: BASE_EQUITY, maxOrderSize: 5000, maxDrawdown: 15, allocPct: 60 },
       { id: "mm", name: "Market-Making Desk", equity: 21500.00, maxOrderSize: 12000, maxDrawdown: 8, allocPct: 25 },
       { id: "quant", name: "Quant Strategies", equity: 9600.00, maxOrderSize: 3000, maxDrawdown: 20, allocPct: 15 },
     ],
@@ -93,10 +104,30 @@
     fixSeq: 1,
     stpNetted: 128,
     stpRate: 99.4,
+
+    // ---- Bilateral / OTC desk ----
+    bilateralSecurity: 0,
+    bilateralSide: "buy",
+    bilateralCptys: {},         // name -> selected bool
+    bilateralQuotes: [],        // last requested quotes
+    bilateralBlotter: [],       // booked OTC trades
+    cptyFeedback: {},           // name -> "up" | "down"
+    bilSpreadA: 0,
+    bilSpreadB: 2,
+    dataSpreadA: 1,
+    dataSpreadB: 4,
   };
 
-  // Candle counts raised (and candle bodies narrowed in app.js) so the
-  // enlarged chart shows meaningfully more price history per timeframe.
+  // Counterparties for the bilateral (OTC) desk — mirrors a salesperson/TOMS
+  // "suggested clients" panel: recent axe direction, size held, last contact.
+  const BILATERAL_CPTYS = [
+    { name: "Meridian Capital",        sell: 162, buy: 30,  held: 17662, contacted: "12/27", user: "J. Filocamo" },
+    { name: "AAEX Advisors",           sell: 0,   buy: 116, held: 8420,  contacted: "12/27", user: "L. Liang" },
+    { name: "Qatar Asset Mgmt (QAM)",  sell: 0,   buy: 129, held: 24110, contacted: "01/03", user: "O. Sarii" },
+    { name: "Helvetia Desk",           sell: 18,  buy: 624, held: 0,     contacted: "12/27", user: "J. Filocamo" },
+    { name: "Verdant Climate (VCON)",  sell: 0,   buy: 0,   held: 16813, contacted: "01/03", user: "J. Filocamo" },
+  ];
+
   const TIMEFRAMES = [
     { key: "1m", label: "1m", count: 140, vol: 0.006 },
     { key: "5m", label: "5m", count: 120, vol: 0.010 },
@@ -109,6 +140,7 @@
   function setTimeframe(key) { svxState.timeframe = key; renderMain(); }
   function setChartType(type) { svxState.chartType = type; renderMain(); }
   function setQuoteCurrency(key) { svxState.quoteCurrency = key; renderMain(); paintWatchlist(); }
+  window.setTimeframe = setTimeframe; window.setChartType = setChartType; window.setQuoteCurrency = setQuoteCurrency;
 
   function buildDepthBook(price, seed) {
     const rng = SVO2.mulberry32(seed);
@@ -125,14 +157,10 @@
 
   /* ===================== Liquidity Pool (constant-product AMM) swap ===================== */
   function setTradeMode(mode) { svxState.tradeMode = mode; renderMain(); }
-  function flipSwapDirection() {
-    svxState.swapDir = svxState.swapDir === "quoteToBase" ? "baseToQuote" : "quoteToBase";
-    renderMain();
-  }
+  function flipSwapDirection() { svxState.swapDir = svxState.swapDir === "quoteToBase" ? "baseToQuote" : "quoteToBase"; renderMain(); }
   function setSwapSlippage(v) { svxState.swapSlippage = v; renderMain(); }
+  window.setTradeMode = setTradeMode; window.flipSwapDirection = flipSwapDirection; window.setSwapSlippage = setSwapSlippage;
 
-  // Deterministic pool reserves per instrument/quote-currency pair, seeded so the
-  // implied pool price starts at the live instrument price. $600k–$2.4M depth.
   function getPool(i, qc) {
     const key = `${i}_${qc}`;
     if (!svxState.pools[key]) {
@@ -140,17 +168,11 @@
       const rng = SVO2.mulberry32(5000 + i * 23 + qc.charCodeAt(0) * 7);
       const tvlUsd = 600000 + rng() * 1800000;
       const reserveBaseUsd = tvlUsd / 2;
-      svxState.pools[key] = {
-        reserveBase: reserveBaseUsd / c.price,
-        reserveQuote: SVO2.convertPrice(reserveBaseUsd, qc),
-      };
+      svxState.pools[key] = { reserveBase: reserveBaseUsd / c.price, reserveQuote: SVO2.convertPrice(reserveBaseUsd, qc) };
     }
     return svxState.pools[key];
   }
 
-  // Standard constant-product (x*y=k) swap math, same formula Uniswap v2-style
-  // AMMs use: output shrinks as trade size grows relative to pool depth, which
-  // is what produces genuine (non-hardcoded) price impact.
   function ammQuote(reserveIn, reserveOut, amountIn, feeBps = 30) {
     const spotPrice = reserveOut / reserveIn;
     if (!amountIn || amountIn <= 0) return { amountOut: 0, priceImpactPct: 0, executionPrice: 0, spotPrice };
@@ -185,6 +207,7 @@
       impactEl.className = q.priceImpactPct > svxState.swapSlippage ? "impact-high" : "";
     }
   }
+  window.updateSwapQuoteDisplay = updateSwapQuoteDisplay;
 
   function executeSwap() {
     const q = currentSwapQuote();
@@ -196,7 +219,6 @@
     const pool = q.pool;
     if (q.dir === "quoteToBase") { pool.reserveQuote += q.amountIn; pool.reserveBase -= q.amountOut; }
     else { pool.reserveBase += q.amountIn; pool.reserveQuote -= q.amountOut; }
-
     const qcLabel = q.qc === "SVO2" ? "SVO₂" : q.qc;
     const inLbl = q.dir === "quoteToBase" ? qcLabel : q.c.ticker;
     const outLbl = q.dir === "quoteToBase" ? q.c.ticker : qcLabel;
@@ -205,10 +227,10 @@
       size: q.dir === "quoteToBase" ? q.amountOut : q.amountIn, price: q.c.price,
       detail: `Swapped ${SVO2.fmt(q.amountIn, 2)} ${inLbl} → ${SVO2.fmt(q.amountOut, 3)} ${outLbl} · ${q.priceImpactPct.toFixed(2)}% impact`,
     });
-    refreshAccountStrip();
-    renderMain();
+    refreshAccountStrip(); renderMain();
     SVO2.showToast(`Swapped ${SVO2.fmt(q.amountIn, 2)} ${inLbl} → ${SVO2.fmt(q.amountOut, 3)} ${outLbl} via liquidity pool (simulated).`);
   }
+  window.executeSwap = executeSwap;
 
   function renderSwapWidget(c, qc) {
     const pool = getPool(svxState.selected, qc);
@@ -227,7 +249,7 @@
           <div style="min-width:58px;padding:6px 8px;border-radius:6px;border:1px solid var(--svx-border);background:var(--svx-bg);color:var(--svx-text-dim);font-size:11px;display:flex;align-items:center;justify-content:center;">${payLabel}</div>
         </div>
       </div>
-      <div class="svx-swap-flip" onclick="flipSwapDirection()" title="Flip direction">&#8645;</div>
+      <div class="svx-swap-flip" onclick="flipSwapDirection()" title="Flip direction" aria-label="Flip swap direction">&#8645;</div>
       <div class="svx-field">
         <label>You receive (estimated)</label>
         <div style="display:flex;gap:6px;">
@@ -264,7 +286,7 @@
 
   function paintTabs() {
     document.getElementById("svx-tabs").innerHTML = TABS.map(t =>
-      `<div class="svx-tab ${t.key === svxState.tab ? "active" : ""}" onclick="setTab('${t.key}')">${t.label}</div>`
+      `<div class="svx-tab ${t.key === svxState.tab ? "active" : ""}" onclick="setTab('${t.key}')" aria-pressed="${t.key === svxState.tab}">${t.label}</div>`
     ).join("");
   }
   function setTab(key) {
@@ -273,23 +295,37 @@
     paintTabs();
     renderMain();
   }
+  window.setTab = setTab;
+
+  /* ---------------- Watchlist (with market search filter) ---------------- */
+  function matchFilter(c) {
+    const f = svxState.marketFilter.trim().toLowerCase();
+    if (!f) return true;
+    return c.ticker.toLowerCase().includes(f) || c.type.toLowerCase().includes(f);
+  }
+  function filterMarkets(v) { svxState.marketFilter = v || ""; paintWatchlist(); }
+  window.filterMarkets = filterMarkets;
 
   function paintWatchlist() {
     const wrap = document.getElementById("svx-watchlist");
-    wrap.innerHTML = SVO2.creditTypes.map((c, i) => `
-      <div class="svx-watch-row ${i === svxState.selected ? "active" : ""}" onclick="selectInstrument(${i})">
+    const visible = SVO2.creditTypes.map((c, i) => ({ c, i })).filter(o => matchFilter(o.c));
+    if (!visible.length) { wrap.innerHTML = `<div class="svx-empty-state">No markets match "${svxState.marketFilter}".</div>`; return; }
+    wrap.innerHTML = visible.map(({ c, i }) => `
+      <div class="svx-watch-row ${i === svxState.selected ? "active" : ""}" onclick="selectInstrument(${i})" aria-pressed="${i === svxState.selected}">
         <span class="nm">${c.ticker}</span>
         <svg class="tv-watch-spark" width="46" height="20" id="spark-${i}"></svg>
         <span class="px" id="wl-px-${i}"></span>
       </div>`
     ).join("");
-    SVO2.creditTypes.forEach((c, i) => {
+    visible.forEach(({ c, i }) => {
+      const sparkEl = document.getElementById(`spark-${i}`);
+      if (!sparkEl) return;
       const rng = SVO2.mulberry32(300 + i * 19);
       const series = [];
       let v = c.price * 0.95;
       for (let k = 0; k < 16; k++) { v += (rng() - 0.47) * (c.price * 0.015); series.push(v); }
       series.push(c.price);
-      SVO2.renderSparkline(document.getElementById(`spark-${i}`), series);
+      SVO2.renderSparkline(sparkEl, series);
       const chg = ((series[series.length - 1] - series[0]) / series[0]) * 100;
       const up = chg >= 0;
       document.getElementById(`wl-px-${i}`).innerHTML =
@@ -297,6 +333,7 @@
     });
   }
   function selectInstrument(i) { svxState.selected = i; if (svxState.tab === "spot") renderMain(); paintWatchlist(); }
+  window.selectInstrument = selectInstrument;
 
   function paintNews() {
     document.getElementById("svx-news").innerHTML = SVO2.marketNews.map(n =>
@@ -305,26 +342,55 @@
   }
 
   function bottomPanelHtml() {
+    const qc = svxState.quoteCurrency;
     const posRows = svxState.positions.length
-      ? svxState.positions.map(p => `<tr>
+      ? svxState.positions.map(p => {
+          const pnl = positionPnl(p);
+          return `<tr>
           <td>${p.instrument}</td><td><span class="svx-badge ${p.side === "buy" ? "buy" : "sell"}">${p.side.toUpperCase()}</span></td>
-          <td>${p.type}</td><td>${SVO2.fmt(p.size)}</td><td>${SVO2.fmtQuote(p.price, svxState.quoteCurrency)}</td><td>${p.detail || "—"}</td>
-        </tr>`).join("")
-      : `<tr><td colspan="6"><div class="svx-empty-state">You have no open positions.</div></td></tr>`;
+          <td>${p.type}</td><td>${SVO2.fmt(p.size)}</td><td>${SVO2.fmtQuote(p.price, qc)}</td>
+          <td class="${pnl >= 0 ? "svx-up" : "svx-down"}">${pnl >= 0 ? "+" : "-"}${SVO2.fmtUsd(Math.abs(pnl))}</td>
+          <td>${p.detail || "—"}</td>
+        </tr>`;
+        }).join("")
+      : `<tr><td colspan="7"><div class="svx-empty-state">You have no open positions.</div></td></tr>`;
     return `
       <div class="svx-panel">
         <div class="svx-bottom-tabs"><span class="active">Positions (${svxState.positions.length})</span><span>Working Orders (${svxState.orders.length})</span></div>
         <div class="table-scroll"><table class="svx-table">
-          <thead><tr><th>Instrument</th><th>Side</th><th>Type</th><th>Size</th><th>Price</th><th>Detail</th></tr></thead>
+          <thead><tr><th>Instrument</th><th>Side</th><th>Type</th><th>Size</th><th>Price</th><th>Unreal. P&amp;L</th><th>Detail</th></tr></thead>
           <tbody>${posRows}</tbody>
         </table></div>
       </div>`;
   }
 
+  /* ---------------- Mark-to-market so P&L / equity actually move ----------------
+     Each position gets a deterministic mark a few percent from entry; unrealised
+     P&L is (mark − entry) × size, signed by side. Equity = base + total P&L. */
+  function positionMark(p) {
+    if (p._mark == null) {
+      const seed = Math.floor(p.price * 1000) + Math.round(p.size) + (svxState.positions.indexOf(p) + 1) * 7;
+      const r = SVO2.mulberry32(seed)();
+      p._mark = p.price * (1 + (r - 0.5) * 0.04);
+    }
+    return p._mark;
+  }
+  function positionPnl(p) {
+    const sign = p.side === "buy" ? 1 : -1;
+    return (positionMark(p) - p.price) * p.size * sign;
+  }
+
   function refreshAccountStrip() {
     const margin = svxState.positions.reduce((s, p) => s + p.price * p.size * 0.1, 0);
+    const pnl = svxState.positions.reduce((s, p) => s + positionPnl(p), 0);
+    const equity = BASE_EQUITY + pnl;
+    document.getElementById("acct-funds").textContent = SVO2.fmtUsd(BASE_EQUITY);
     document.getElementById("acct-margin").textContent = SVO2.fmtUsd(margin);
-    document.getElementById("acct-available").textContent = SVO2.fmtUsd(38311.83 - margin);
+    document.getElementById("acct-available").textContent = SVO2.fmtUsd(Math.max(0, equity - margin));
+    document.getElementById("acct-equity").textContent = SVO2.fmtUsd(equity);
+    const pnlEl = document.getElementById("acct-pnl");
+    pnlEl.textContent = (pnl >= 0 ? "+" : "-") + SVO2.fmtUsd(Math.abs(pnl));
+    pnlEl.style.color = pnl >= 0 ? "var(--svx-buy)" : "var(--svx-sell)";
     document.getElementById("pos-count-badge").textContent = svxState.positions.length;
     document.getElementById("ord-count-badge").textContent = svxState.orders.length;
   }
@@ -348,7 +414,6 @@
     const maxSize = Math.max(...depth.bids.map(b => b.size), ...depth.asks.map(a => a.size));
     const bestBid = depth.bids[0].price, bestAsk = depth.asks[0].price;
     const spread = bestAsk - bestBid;
-
     const qc = svxState.quoteCurrency;
 
     return `
@@ -398,8 +463,8 @@
               `).join("")}
 
               <div class="svx-deal-btns" style="margin-top:10px;">
-                <div class="svx-deal-btn sell"><div class="lbl">Sell</div><div class="prc">${SVO2.fmtQuote(bestBid, qc)}</div></div>
-                <div class="svx-deal-btn buy"><div class="lbl">Buy</div><div class="prc">${SVO2.fmtQuote(bestAsk, qc)}</div></div>
+                <div class="svx-deal-btn sell" onclick="placeSpotDeal('sell', ${bestBid})"><div class="lbl">Sell</div><div class="prc">${SVO2.fmtQuote(bestBid, qc)}</div></div>
+                <div class="svx-deal-btn buy" onclick="placeSpotDeal('buy', ${bestAsk})"><div class="lbl">Buy</div><div class="prc">${SVO2.fmtQuote(bestAsk, qc)}</div></div>
               </div>
               <div class="svi-field svi-otype-field">
                 <label>Order Type</label>
@@ -444,10 +509,7 @@
     const result = runRiskChecks(size, limit || stop, price);
     svxState.lastRiskResult = result;
     const verdictEl = document.getElementById("svi-risk-verdict");
-    if (verdictEl) {
-      verdictEl.textContent = result.passed ? "Pass" : "Blocked";
-      verdictEl.className = "svi-chip " + (result.passed ? "ok" : "bad");
-    }
+    if (verdictEl) { verdictEl.textContent = result.passed ? "Pass" : "Blocked"; verdictEl.className = "svi-chip " + (result.passed ? "ok" : "bad"); }
     const linesEl = document.getElementById("svi-risk-lines");
     if (linesEl) linesEl.innerHTML = riskLinesHtml(result);
 
@@ -456,14 +518,13 @@
       logExec(`<b>${ORDER_TYPES[type].label}</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — <span style="color:var(--svx-sell)">blocked by pre-trade risk check</span>`);
       return;
     }
-
     const id = uid();
     simulateOrderType(type, side, price, size, id);
     svxState.positions.push({ instrument: c.ticker, side, type: ORDER_TYPES[type].label, size, price, detail: `Order ${id}` });
-    refreshAccountStrip();
-    renderMain();
+    refreshAccountStrip(); renderMain();
     SVO2.showToast(`${side.toUpperCase()} ${SVO2.fmt(size)} ${c.ticker} @ ${SVO2.fmtQuote(price, svxState.quoteCurrency)} filled (simulated).`);
   }
+  window.placeSpotDeal = placeSpotDeal;
 
   /* ===================== INSTITUTIONAL — order-type & risk-check engine ===================== */
   const ORDER_TYPES = {
@@ -492,6 +553,7 @@
     const extraEl = document.getElementById("svi-otype-extra");
     if (extraEl) extraEl.innerHTML = orderTypeExtraHtml(type);
   }
+  window.onOrderTypeChange = onOrderTypeChange;
 
   function orderTypeExtraHtml(type) {
     if (type === "twap") return `<div class="svi-inline-fields">
@@ -512,30 +574,21 @@
   function runRiskChecks(size, limitOrStop, refPrice) {
     const sub = activeSub();
     const checks = [];
-
     const fatFinger = size > 5000;
-    checks.push({ label: "Fat-finger screen", pass: !fatFinger,
-      detail: fatFinger ? `Size ${SVO2.fmt(size)} units is unusually large for this instrument` : "Order size within normal range" });
-
+    checks.push({ label: "Fat-finger screen", pass: !fatFinger, detail: fatFinger ? `Size ${SVO2.fmt(size)} units is unusually large for this instrument` : "Order size within normal range" });
     let collarBreach = false;
     if (limitOrStop && limitOrStop > 0) {
       const pct = Math.abs(limitOrStop - refPrice) / refPrice * 100;
       collarBreach = pct > 10;
-      checks.push({ label: "Price collar (±10%)", pass: !collarBreach,
-        detail: collarBreach ? `${pct.toFixed(1)}% away from last traded price ${SVO2.fmt(refPrice, 2)}` : `${pct.toFixed(1)}% from last traded price` });
+      checks.push({ label: "Price collar (±10%)", pass: !collarBreach, detail: collarBreach ? `${pct.toFixed(1)}% away from last traded price ${SVO2.fmt(refPrice, 2)}` : `${pct.toFixed(1)}% from last traded price` });
     } else {
       checks.push({ label: "Price collar (±10%)", pass: true, detail: "No limit/stop price set — market reference used" });
     }
-
     const maxSizeBreach = size > sub.maxOrderSize;
-    checks.push({ label: `Max order size (${sub.name})`, pass: !maxSizeBreach,
-      detail: maxSizeBreach ? `Exceeds sub-account cap of ${SVO2.fmt(sub.maxOrderSize)} units` : `Within ${SVO2.fmt(sub.maxOrderSize)}-unit sub-account cap` });
-
+    checks.push({ label: `Max order size (${sub.name})`, pass: !maxSizeBreach, detail: maxSizeBreach ? `Exceeds sub-account cap of ${SVO2.fmt(sub.maxOrderSize)} units` : `Within ${SVO2.fmt(sub.maxOrderSize)}-unit sub-account cap` });
     const notional = size * refPrice;
     const marginOk = notional <= sub.equity * 4;
-    checks.push({ label: "Available margin", pass: marginOk,
-      detail: marginOk ? `${money(notional)} notional within available margin` : `${money(notional)} notional exceeds available margin` });
-
+    checks.push({ label: "Available margin", pass: marginOk, detail: marginOk ? `${money(notional)} notional within available margin` : `${money(notional)} notional exceeds available margin` });
     return { checks, passed: checks.every(c => c.pass) };
   }
 
@@ -567,11 +620,8 @@
         const sliceSize = size / slices;
         const px = (price + rand(-0.03, 0.03)).toFixed(4);
         logExec(`${label} slice ${done}/${slices}: ${SVO2.fmt(sliceSize, 1)} units @ ${px} USDT`);
-        if (done >= slices) {
-          SVO2.showToast(`${label} order ${id} fully executed — avg price ≈ ${SVO2.fmt(price, 4)} USDT.`);
-        } else {
-          setTimeout(tick, 450);
-        }
+        if (done >= slices) SVO2.showToast(`${label} order ${id} fully executed — avg price ≈ ${SVO2.fmt(price, 4)} USDT.`);
+        else setTimeout(tick, 450);
       };
       setTimeout(tick, 450);
       SVO2.showToast(`${label} order accepted — slicing ${SVO2.fmt(size)} units over ${duration} min.`);
@@ -583,22 +633,12 @@
       SVO2.showToast(`Iceberg order live — only ${SVO2.fmt(display)} units visible on the book at once.`);
     } else if (type === "post_only") {
       const wouldCross = Math.random() < 0.15;
-      if (wouldCross) {
-        logExec(`<b>Post-Only</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — <span style="color:var(--svx-sell)">rejected, would have taken liquidity</span>`);
-        SVO2.showToast("Post-Only order rejected — it would have crossed the spread.");
-      } else {
-        logExec(`<b>Post-Only</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — resting on the book as maker (id ${id})`);
-        SVO2.showToast("Post-Only order resting on the book as maker.");
-      }
+      if (wouldCross) { logExec(`<b>Post-Only</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — <span style="color:var(--svx-sell)">rejected, would have taken liquidity</span>`); SVO2.showToast("Post-Only order rejected — it would have crossed the spread."); }
+      else { logExec(`<b>Post-Only</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — resting on the book as maker (id ${id})`); SVO2.showToast("Post-Only order resting on the book as maker."); }
     } else if (type === "fok") {
       const filled = Math.random() < 0.8;
-      if (filled) {
-        logExec(`<b>Fill-or-Kill</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — fully filled instantly (id ${id})`);
-        SVO2.showToast("FOK order fully filled.");
-      } else {
-        logExec(`<b>Fill-or-Kill</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — <span style="color:var(--svx-sell)">insufficient book depth, order killed</span>`);
-        SVO2.showToast("FOK order killed — not enough liquidity to fill in full.");
-      }
+      if (filled) { logExec(`<b>Fill-or-Kill</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — fully filled instantly (id ${id})`); SVO2.showToast("FOK order fully filled."); }
+      else { logExec(`<b>Fill-or-Kill</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — <span style="color:var(--svx-sell)">insufficient book depth, order killed</span>`); SVO2.showToast("FOK order killed — not enough liquidity to fill in full."); }
     } else if (type === "ioc") {
       const filledPct = rand(35, 100);
       logExec(`<b>Immediate-or-Cancel</b> ${side.toUpperCase()} ${SVO2.fmt(size)} — ${filledPct.toFixed(0)}% filled immediately, remainder cancelled (id ${id})`);
@@ -626,11 +666,7 @@
             ${SVO2.futuresContracts.map((f, i) => `<tr>
               <td>${f.contract}</td><td>${f.underlying}</td><td>${f.expiry}</td><td>${SVO2.fmtUsd(f.mark)}</td>
               <td class="svx-up">${f.basis}</td><td>${SVO2.fmt(f.oi)}</td><td>${f.funding}</td>
-              <td>
-                <input type="number" min="1" value="${getFutureQty(i)}" onchange="setFutureQty(${i}, this.value)"
-                  style="width:56px;padding:4px 6px;font-size:11px;background:var(--svx-bg);color:var(--svx-text);
-                  border:1px solid var(--svx-border);border-radius:5px;font-family:inherit;">
-              </td>
+              <td><input type="number" min="1" value="${getFutureQty(i)}" onchange="setFutureQty(${i}, this.value)" style="width:56px;padding:4px 6px;font-size:11px;background:var(--svx-bg);color:var(--svx-text);border:1px solid var(--svx-border);border-radius:5px;font-family:inherit;"></td>
               <td style="white-space:nowrap;">
                 <button class="btn btn-buy" style="padding:5px 9px;font-size:11px;" onclick="tradeFuture(${i},'buy')">Buy ${getFutureQty(i)}</button>
                 <button class="btn btn-sell" style="padding:5px 9px;font-size:11px;" onclick="tradeFuture(${i},'sell')">Sell ${getFutureQty(i)}</button>
@@ -648,11 +684,7 @@
               <td>${o.underlying}</td><td>${SVO2.fmtUsd(o.strike)}</td>
               <td><span class="svx-badge ${o.type === "Call" ? "buy" : "sell"}">${o.type}</span></td>
               <td>${SVO2.fmtUsd(o.premium)}</td><td>${o.expiry}</td><td>${o.delta.toFixed(2)}</td>
-              <td onclick="event.stopPropagation()">
-                <input type="number" min="1" value="${getOptionQty(i)}" onchange="setOptionQty(${i}, this.value)"
-                  style="width:56px;padding:4px 6px;font-size:11px;background:var(--svx-bg);color:var(--svx-text);
-                  border:1px solid var(--svx-border);border-radius:5px;font-family:inherit;">
-              </td>
+              <td onclick="event.stopPropagation()"><input type="number" min="1" value="${getOptionQty(i)}" onchange="setOptionQty(${i}, this.value)" style="width:56px;padding:4px 6px;font-size:11px;background:var(--svx-bg);color:var(--svx-text);border:1px solid var(--svx-border);border-radius:5px;font-family:inherit;"></td>
               <td style="white-space:nowrap;" onclick="event.stopPropagation()">
                 <button class="btn btn-buy" style="padding:5px 9px;font-size:11px;" onclick="tradeOption(${i},'buy')">Buy ${getOptionQty(i)}</button>
                 <button class="btn btn-sell" style="padding:5px 9px;font-size:11px;" onclick="tradeOption(${i},'sell')">Sell ${getOptionQty(i)}</button>
@@ -678,9 +710,9 @@
   function getOptionQty(i) { return svxState.optionQty[i] ?? 10; }
   function setOptionQty(i, v) { svxState.optionQty[i] = Math.max(1, parseFloat(v) || 10); renderMain(); }
   function selectOption(i) { svxState.selectedOptionIdx = i; renderMain(); }
-
   function getFutureQty(i) { return svxState.futureQty[i] ?? 100; }
   function setFutureQty(i, v) { svxState.futureQty[i] = Math.max(1, parseFloat(v) || 100); renderMain(); }
+  window.setOptionQty = setOptionQty; window.selectOption = selectOption; window.setFutureQty = setFutureQty;
 
   function tradeFuture(i, side) {
     const f = SVO2.futuresContracts[i];
@@ -692,16 +724,12 @@
   function tradeOption(i, side) {
     const o = SVO2.optionsChain[i];
     const qty = getOptionQty(i);
-    svxState.selectedOptionIdx = i;
-    svxState.selectedOptionSide = side;
-    svxState.positions.push({
-      instrument: `${o.underlying} ${o.strike} ${o.type}`, side, type: "Option",
-      size: qty, price: o.premium, detail: `Δ ${o.delta.toFixed(2)} · Strike ${o.strike.toFixed(2)}`,
-    });
-    refreshAccountStrip();
-    renderMain();
+    svxState.selectedOptionIdx = i; svxState.selectedOptionSide = side;
+    svxState.positions.push({ instrument: `${o.underlying} ${o.strike} ${o.type}`, side, type: "Option", size: qty, price: o.premium, detail: `Δ ${o.delta.toFixed(2)} · Strike ${o.strike.toFixed(2)}` });
+    refreshAccountStrip(); renderMain();
     SVO2.showToast(`${side === "buy" ? "Bought" : "Sold"} ${SVO2.fmt(qty)} × ${o.type} @ strike ${SVO2.fmtUsd(o.strike)} (simulated).`);
   }
+  window.tradeFuture = tradeFuture; window.tradeOption = tradeOption;
 
   /* ===================== STAKING & YIELD FARMING ===================== */
   function renderStaking() {
@@ -745,6 +773,7 @@
     ).join("");
     SVO2.showToast(`Staked ${SVO2.fmt(amt)} into ${p.name} (simulated).`);
   }
+  window.stakeInPool = stakeInPool;
 
   /* ===================== MARKET RISK ===================== */
   function renderRisk() {
@@ -754,7 +783,6 @@
     const label = beta < 0.8 ? "Defensive" : beta <= 1.2 ? "Market-Aligned" : "Aggressive";
     const sorted = [...analysis.rows].sort((a, b) => b.beta - a.beta);
     const highest = sorted[0], lowest = sorted[sorted.length - 1];
-
     return `
       <div class="grid grid-3" style="margin-bottom:14px;">
         <div class="svx-stat-tile"><div class="lbl">Win Rate</div><div class="val">${(m.winRate * 100).toFixed(0)}%</div></div>
@@ -764,7 +792,6 @@
         <div class="svx-stat-tile"><div class="lbl">Avg. Hold Period</div><div class="val">${m.avgHoldDays.toFixed(1)} days</div></div>
         <div class="svx-stat-tile"><div class="lbl">Total Trades</div><div class="val">${m.trades}</div></div>
       </div>
-
       <div class="svx-panel">
         <h3>Portfolio Beta Coefficient</h3>
         <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:12px;">
@@ -781,11 +808,7 @@
         <div class="table-scroll"><table class="svx-table">
           <thead><tr><th>Asset</th><th>Portfolio Weight</th><th>Beta</th><th>Contribution to Portfolio Beta</th></tr></thead>
           <tbody>
-            ${sorted.map(r => `<tr>
-              <td>${r.type}</td><td>${(r.weight * 100).toFixed(1)}%</td>
-              <td class="${r.beta >= 1 ? "svx-up" : "svx-down"}">${r.beta.toFixed(2)}</td>
-              <td>${r.contribution.toFixed(3)}</td>
-            </tr>`).join("")}
+            ${sorted.map(r => `<tr><td>${r.type}</td><td>${(r.weight * 100).toFixed(1)}%</td><td class="${r.beta >= 1 ? "svx-up" : "svx-down"}">${r.beta.toFixed(2)}</td><td>${r.contribution.toFixed(3)}</td></tr>`).join("")}
           </tbody>
         </table></div>
         <p style="font-size:12px;color:var(--svx-text-dim);margin-top:12px;">
@@ -801,13 +824,13 @@
   /* ===================== INSTITUTIONAL ===================== */
   function subnavHtml() {
     return [
+      ["bilateral", "Bilateral Executions"],
       ["risk", "Risk &amp; Margin"],
       ["connectivity", "Connectivity &amp; Infrastructure"],
       ["clearing", "Clearing &amp; Settlement"],
       ["data", "Data &amp; Analytics"],
     ].map(([key, label]) => `<button class="${svxState.sviSection === key ? "active" : ""}" onclick="setSviSection('${key}')">${label}</button>`).join("");
   }
-
   function renderInstitutional() {
     return `
       <div class="svx-panel svi-wrap">
@@ -815,21 +838,307 @@
         <div id="svi-section">${renderSviSection(svxState.sviSection)}</div>
       </div>`;
   }
-
   function renderSviSection(section) {
+    if (section === "bilateral") return renderBilateralSection();
     if (section === "risk") return renderRiskSection();
     if (section === "connectivity") return renderConnectivitySection();
     if (section === "clearing") return renderClearingSection();
     if (section === "data") return renderDataSection();
     return "";
   }
-
   function setSviSection(key) {
     if (svxState.sviSection === "data" && key !== "data") stopL3Feed();
     svxState.sviSection = key;
     document.getElementById("svi-subnav").innerHTML = subnavHtml();
     document.getElementById("svi-section").innerHTML = renderSviSection(key);
+    afterInstitutionalRender();
   }
+  window.setSviSection = setSviSection;
+
+  // Post-render hook: paint charts/blotters that need the section DOM to exist.
+  function afterInstitutionalRender() {
+    if (svxState.sviSection === "bilateral") {
+      paintAxeBlotter(); paintCounterparties(); paintBilateralBlotter(); renderBilateralSpread();
+    } else if (svxState.sviSection === "data") {
+      renderDataSpread();
+    }
+  }
+
+  /* ===================== BILATERAL EXECUTIONS (OTC / TOMS-style) ===================== */
+  function axeRows() {
+    // Deterministic dealer axe/inquiry lines derived from each tokenised credit.
+    return SVO2.creditTypes.map((c, i) => {
+      const rng = SVO2.mulberry32(4200 + i * 53);
+      const half = c.price * (0.0008 + rng() * 0.0016);
+      const bid = c.price - half, ask = c.price + half;
+      const bidSprd = (rng() * 6 + 2), askSprd = (rng() * 6 + 2);
+      const bidSz = Math.round(1 + rng() * 14), askSz = Math.round(1 + rng() * 14); // in MM notional
+      const score = Math.round(30 + rng() * 70);
+      const axe = rng() > 0.55 ? "AXE" : rng() > 0.5 ? "RUNZ" : "NONE";
+      return { i, c, bid, ask, bidSprd, askSprd, bidSz, askSz, score, axe };
+    });
+  }
+
+  function renderBilateralSection() {
+    return `
+      <div class="svi-section-title">Axe &amp; Inquiry Blotter</div>
+      <p class="svi-desc" style="margin:-4px 0 10px;">
+        Dealer-to-client OTC inquiries across tokenised carbon credits — bid/ask levels, indicative spreads, and
+        dealer size (MM). Click a line to load it into the RFQ ticket. Modelled on a sell-side salesperson blotter.
+      </p>
+      <div class="toms-blotter">
+        <table class="toms-table" id="toms-table">
+          <thead><tr>
+            <th>Time</th><th>Security</th><th>Score</th><th>Bid Px</th><th>Ask Px</th>
+            <th>Bid Sprd</th><th>Ask Sprd</th><th>Bid Sz</th><th>Ask Sz</th><th>Axe</th>
+          </tr></thead>
+          <tbody id="toms-body"></tbody>
+        </table>
+      </div>
+
+      <div class="bilateral-grid" style="margin-top:16px;">
+        <div class="svi-card">
+          <h4 style="justify-content:flex-start;">Request for Quote (RFQ) Ticket</h4>
+          <div class="svi-field"><label>Security</label>
+            <select id="rfq-security" onchange="onRfqSecurity(this.value)">
+              ${SVO2.creditTypes.map((c, i) => `<option value="${i}" ${i === svxState.bilateralSecurity ? "selected" : ""}>${c.ticker} — ${c.type}</option>`).join("")}
+            </select>
+          </div>
+          <div class="svi-inline-fields">
+            <div class="svi-field"><label>Direction</label>
+              <select id="rfq-side" onchange="svxStateSet('bilateralSide', this.value)">
+                <option value="buy" ${svxState.bilateralSide === "buy" ? "selected" : ""}>Buy (we pay offer)</option>
+                <option value="sell" ${svxState.bilateralSide === "sell" ? "selected" : ""}>Sell (we hit bid)</option>
+              </select>
+            </div>
+            <div class="svi-field"><label>Size (units)</label><input type="number" id="rfq-size" placeholder="e.g. 2500" min="1"></div>
+          </div>
+          <label class="svi-field" style="display:block;"><span style="display:block;font-size:11px;color:var(--svx-text-dim);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">Request from counterparties</span></label>
+          <div class="rfq-cpty-list" id="rfq-cpty-list"></div>
+          <button class="btn btn-primary btn-block" onclick="requestQuotes()">Request Quotes</button>
+          <div id="rfq-quotes" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="svi-card">
+          <h4 style="justify-content:flex-start;">Suggested Counterparties</h4>
+          <div class="table-scroll"><table class="cpty-panel-table" id="cpty-table">
+            <thead><tr><th>Client</th><th>Sell / Buy</th><th>Held (M)</th><th>Contacted</th><th>Feedback</th></tr></thead>
+            <tbody id="cpty-body"></tbody>
+          </table></div>
+          <p class="svi-note" style="margin-top:10px;">
+            Client axes, sizes and contact history are simulated. Names are illustrative only — no relationship
+            or communication is implied.
+          </p>
+        </div>
+      </div>
+
+      <div class="svi-section-title">Spread Analysis</div>
+      <div class="spread-picker">
+        <div class="svi-field" style="margin:0;"><label>Instrument A (left axis)</label>
+          <select id="bil-spread-a">${SVO2.creditTypes.map((c, i) => `<option value="${i}" ${i === svxState.bilSpreadA ? "selected" : ""}>${c.ticker}</option>`).join("")}</select>
+        </div>
+        <div class="svi-field" style="margin:0;"><label>Instrument B (right axis)</label>
+          <select id="bil-spread-b">${SVO2.creditTypes.map((c, i) => `<option value="${i}" ${i === svxState.bilSpreadB ? "selected" : ""}>${c.ticker}</option>`).join("")}</select>
+        </div>
+        <button class="svi-btn solid" onclick="renderBilateralSpread(true)">Analyse Spread</button>
+      </div>
+      <div id="bilateral-spread"></div>
+
+      <div class="svi-section-title">Bilateral Trade Blotter</div>
+      <div class="toms-blotter">
+        <table class="svx-table" style="min-width:760px;">
+          <thead><tr><th>Time</th><th>Security</th><th>Side</th><th>Counterparty</th><th>Size</th><th>Price</th><th>Notional</th><th>Settlement</th><th></th></tr></thead>
+          <tbody id="bilateral-blotter-body"></tbody>
+        </table>
+      </div>
+      <p class="svi-note">Illustrative OTC / bilateral execution desk — no real counterparties, RFQ network, or settlement rails are connected. Booked trades feed the same pre-trade risk checks and mark-to-market P&amp;L as the on-exchange order book.</p>
+    `;
+  }
+
+  function paintAxeBlotter() {
+    const body = document.getElementById("toms-body");
+    if (!body) return;
+    const rows = axeRows();
+    const maxSz = Math.max(...rows.map(r => Math.max(r.bidSz, r.askSz)));
+    const t = new Date();
+    body.innerHTML = rows.map(r => {
+      const tm = `${pad2(t.getHours())}:${pad2((t.getMinutes() - r.i + 60) % 60)}`;
+      const axeCls = r.axe === "AXE" ? "" : r.axe === "RUNZ" ? "runz" : "none";
+      const sel = r.i === svxState.bilateralSecurity ? "selected" : "";
+      return `<tr class="${sel}" onclick="loadAxeIntoRfq(${r.i})">
+        <td class="u-dim">${tm}</td>
+        <td class="toms-sec">${r.c.ticker}</td>
+        <td><span class="toms-score" style="width:${(r.score / 100 * 46).toFixed(0)}px;"></span></td>
+        <td class="toms-px-bid">${r.bid.toFixed(3)}</td>
+        <td class="toms-px-ask">${r.ask.toFixed(3)}</td>
+        <td>${r.bidSprd.toFixed(2)}</td>
+        <td>${r.askSprd.toFixed(2)}</td>
+        <td class="toms-sz-cell"><div class="toms-sz-bar" style="width:${(r.bidSz / maxSz * 60).toFixed(0)}px;"></div><span>${r.bidSz}MM</span></td>
+        <td class="toms-sz-cell"><div class="toms-sz-bar" style="width:${(r.askSz / maxSz * 60).toFixed(0)}px;"></div><span>${r.askSz}MM</span></td>
+        <td><span class="axe-tag ${axeCls}">${r.axe === "NONE" ? "—" : r.axe}</span></td>
+      </tr>`;
+    }).join("");
+  }
+
+  function loadAxeIntoRfq(i) {
+    svxState.bilateralSecurity = i;
+    const sel = document.getElementById("rfq-security");
+    if (sel) sel.value = String(i);
+    paintAxeBlotter();
+    SVO2.showToast(`${SVO2.creditTypes[i].ticker} loaded into RFQ ticket.`);
+  }
+  window.loadAxeIntoRfq = loadAxeIntoRfq;
+
+  function onRfqSecurity(v) { svxState.bilateralSecurity = parseInt(v, 10); paintAxeBlotter(); }
+  function svxStateSet(k, v) { svxState[k] = v; }
+  window.onRfqSecurity = onRfqSecurity; window.svxStateSet = svxStateSet;
+
+  function paintCounterparties() {
+    // RFQ counterparty checklist
+    const list = document.getElementById("rfq-cpty-list");
+    if (list) {
+      list.innerHTML = BILATERAL_CPTYS.map(cp => {
+        const checked = svxState.bilateralCptys[cp.name] !== false; // default all selected
+        return `<label class="rfq-cpty-opt"><input type="checkbox" ${checked ? "checked" : ""} onchange="toggleCpty('${cp.name.replace(/'/g, "")}', this.checked)"> ${cp.name}</label>`;
+      }).join("");
+    }
+    // Suggested-counterparties activity table
+    const body = document.getElementById("cpty-body");
+    if (body) {
+      body.innerHTML = BILATERAL_CPTYS.map(cp => {
+        const fb = svxState.cptyFeedback[cp.name];
+        return `<tr>
+          <td>${cp.name}<br><span class="u-dim" style="font-size:10px;">${cp.user}</span></td>
+          <td class="cpty-activity"><span class="sell">${cp.sell || "·"}</span> / <span class="buy">${cp.buy || "·"}</span></td>
+          <td class="u-mono">${cp.held ? SVO2.fmt(cp.held) : "—"}</td>
+          <td class="u-dim u-mono">${cp.contacted}</td>
+          <td><span class="cpty-fb">
+            <button class="up ${fb === "up" ? "on" : ""}" onclick="rateCpty('${cp.name.replace(/'/g, "")}','up')" aria-label="Positive feedback">▲</button>
+            <button class="down ${fb === "down" ? "on" : ""}" onclick="rateCpty('${cp.name.replace(/'/g, "")}','down')" aria-label="Negative feedback">▼</button>
+          </span></td>
+        </tr>`;
+      }).join("");
+    }
+  }
+  function toggleCpty(name, on) { svxState.bilateralCptys[name] = on; }
+  function rateCpty(name, dir) { svxState.cptyFeedback[name] = svxState.cptyFeedback[name] === dir ? null : dir; paintCounterparties(); }
+  window.toggleCpty = toggleCpty; window.rateCpty = rateCpty;
+
+  function requestQuotes() {
+    const i = svxState.bilateralSecurity;
+    const c = SVO2.creditTypes[i];
+    const side = document.getElementById("rfq-side").value;
+    const size = parseFloat(document.getElementById("rfq-size").value);
+    if (!size || size <= 0) { SVO2.showToast("Enter an RFQ size."); return; }
+    const selected = BILATERAL_CPTYS.filter(cp => svxState.bilateralCptys[cp.name] !== false);
+    if (!selected.length) { SVO2.showToast("Select at least one counterparty to request from."); return; }
+
+    // Each counterparty returns a competing quote spread around mid, sized by
+    // relationship (bigger holders quote tighter). Deterministic per cpty+size.
+    const quotes = selected.map((cp, k) => {
+      const rng = SVO2.mulberry32(Math.round(c.price * 100) + Math.round(size) + k * 41);
+      const edgeBps = 4 + rng() * 22 - Math.min(8, cp.held / 4000); // tighter for bigger holders
+      const edge = c.price * Math.max(1, edgeBps) / 10000;
+      const px = side === "buy" ? c.price + edge : c.price - edge;
+      return { cpty: cp.name, px, edgeBps: Math.max(1, edgeBps) };
+    });
+    // Best = lowest offer (buy) or highest bid (sell).
+    quotes.sort((a, b) => side === "buy" ? a.px - b.px : b.px - a.px);
+    svxState.bilateralQuotes = quotes;
+
+    document.getElementById("rfq-quotes").innerHTML = `
+      <div class="svi-desc" style="margin-bottom:6px;">Competing ${side === "buy" ? "offers" : "bids"} for ${SVO2.fmt(size)} ${c.ticker}:</div>
+      ${quotes.map((q, idx) => `
+        <div class="rfq-quote-row ${idx === 0 ? "best" : ""}">
+          <span class="cpty">${q.cpty}</span>
+          <span class="q-px">${q.px.toFixed(4)}</span>
+          <span class="rfq-quote-badge">${idx === 0 ? "Best" : q.edgeBps.toFixed(0) + " bps"}</span>
+          <button class="svi-btn small ${idx === 0 ? "solid" : ""}" onclick="executeBilateral('${q.cpty.replace(/'/g, "")}', ${q.px}, ${size}, '${side}')">Execute</button>
+        </div>`).join("")}`;
+    SVO2.showToast(`Received ${quotes.length} quote(s) for ${SVO2.fmt(size)} ${c.ticker}.`);
+  }
+  window.requestQuotes = requestQuotes;
+
+  function executeBilateral(cpty, px, size, side) {
+    const c = SVO2.creditTypes[svxState.bilateralSecurity];
+    // Same pre-trade risk gate as on-exchange orders.
+    const result = runRiskChecks(size, px, c.price);
+    if (!result.passed) {
+      const failed = result.checks.find(x => !x.pass);
+      SVO2.showToast(`Bilateral trade blocked by pre-trade risk check — ${failed ? failed.label : "risk limit"}.`);
+      return;
+    }
+    const trade = {
+      time: nowStr(), security: c.ticker, side, cpty, size, price: px,
+      notional: size * px, status: "pending", id: uid(),
+    };
+    svxState.bilateralBlotter.unshift(trade);
+    // Feed the position into the shared book so risk + P&L reflect it.
+    svxState.positions.push({ instrument: c.ticker, side, type: "OTC Bilateral", size, price: px, detail: `vs ${cpty}` });
+    refreshAccountStrip();
+    paintBilateralBlotter();
+    document.getElementById("rfq-quotes").innerHTML = "";
+    SVO2.showToast(`Bilateral ${side.toUpperCase()} ${SVO2.fmt(size)} ${c.ticker} @ ${px.toFixed(4)} vs ${cpty} — booked, pending confirmation (simulated).`);
+  }
+  window.executeBilateral = executeBilateral;
+
+  function paintBilateralBlotter() {
+    const body = document.getElementById("bilateral-blotter-body");
+    if (!body) return;
+    if (!svxState.bilateralBlotter.length) {
+      body.innerHTML = `<tr><td colspan="9"><div class="svx-empty-state">No bilateral trades booked yet — request and execute a quote above.</div></td></tr>`;
+      return;
+    }
+    body.innerHTML = svxState.bilateralBlotter.map((t, idx) => {
+      const next = t.status === "pending" ? "Confirm" : t.status === "confirmed" ? "Settle" : null;
+      return `<tr>
+        <td class="u-mono u-dim">${t.time}</td>
+        <td class="toms-sec">${t.security}</td>
+        <td><span class="svx-badge ${t.side === "buy" ? "buy" : "sell"}">${t.side.toUpperCase()}</span></td>
+        <td>${t.cpty}</td>
+        <td class="u-mono">${SVO2.fmt(t.size)}</td>
+        <td class="u-mono">${t.price.toFixed(4)}</td>
+        <td class="u-mono">${SVO2.fmtUsd(t.notional)}</td>
+        <td><span class="settle-status ${t.status}">${t.status}</span></td>
+        <td>${next ? `<button class="svi-btn small" onclick="advanceSettlement(${idx})">${next}</button>` : `<span class="u-dim" style="font-size:10px;">T+0 done</span>`}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  function advanceSettlement(idx) {
+    const t = svxState.bilateralBlotter[idx];
+    if (!t) return;
+    if (t.status === "pending") { t.status = "confirmed"; SVO2.showToast(`Trade vs ${t.cpty} confirmed by counterparty (simulated).`); }
+    else if (t.status === "confirmed") { t.status = "settled"; SVO2.showToast(`Trade vs ${t.cpty} settled T+0 against tri-party collateral (simulated).`); }
+    paintBilateralBlotter();
+  }
+  window.advanceSettlement = advanceSettlement;
+
+  /* ---------------- Spread study (shared by Bilateral + Data & Analytics) ---------------- */
+  function drawSpread(containerId, aIdx, bIdx, seedBase) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    const A = SVO2.creditTypes[aIdx], B = SVO2.creditTypes[bIdx];
+    const seriesA = SVO2.generateSeries(A.price, 120, seedBase + aIdx * 7, 0.02);
+    const seriesB = SVO2.generateSeries(B.price, 120, seedBase + bIdx * 11 + 3, 0.02);
+    SVO2.renderSpreadAnalysis(el, { seriesA, seriesB, labelA: A.ticker, labelB: B.ticker });
+  }
+  function renderBilateralSpread(fromButton) {
+    if (fromButton) {
+      svxState.bilSpreadA = parseInt(document.getElementById("bil-spread-a").value, 10);
+      svxState.bilSpreadB = parseInt(document.getElementById("bil-spread-b").value, 10);
+    }
+    drawSpread("bilateral-spread", svxState.bilSpreadA, svxState.bilSpreadB, 8100);
+  }
+  function renderDataSpread(fromButton) {
+    if (fromButton) {
+      svxState.dataSpreadA = parseInt(document.getElementById("data-spread-a").value, 10);
+      svxState.dataSpreadB = parseInt(document.getElementById("data-spread-b").value, 10);
+    }
+    drawSpread("data-spread", svxState.dataSpreadA, svxState.dataSpreadB, 3300);
+  }
+  window.renderBilateralSpread = renderBilateralSpread;
+  window.renderDataSpread = renderDataSpread;
 
   /* ---------------- Risk & Margin ---------------- */
   function renderRiskSection() {
@@ -838,7 +1147,9 @@
     return `
       <div class="svi-section-title">Sub-Account Architecture</div>
       <p class="svi-desc" style="margin:-4px 0 12px;">
-        Segregate capital and risk limits by desk or strategy. Total firm equity across sub-accounts: <b style="color:var(--svx-text)">${money(totalEquity)}</b>.
+        Segregate capital and risk limits by desk or strategy. The top account strip reflects the
+        <b style="color:var(--svx-text)">Main Trading Desk</b> (${money(BASE_EQUITY)}); total firm equity across all
+        desks is <b style="color:var(--svx-text)">${money(totalEquity)}</b>.
       </p>
       <div class="svi-grid svi-grid-3">
         ${svxState.subAccounts.map(s => `
@@ -869,7 +1180,7 @@
       <div class="svi-card">
         <div class="svi-slider-row">
           <span style="font-size:11px;color:var(--svx-text-dim);min-width:120px;">Margin utilisation</span>
-          <input type="range" id="svi-margin-util" min="0" max="100" value="42" oninput="onMarginUtilChange(this.value)">
+          <input type="range" id="svi-margin-util" min="0" max="100" value="42" oninput="onMarginUtilChange(this.value)" aria-label="Margin utilisation">
           <span class="svi-slider-val" id="svi-margin-util-val">42%</span>
         </div>
         <div class="svi-progress" style="margin-top:10px;"><span id="svi-margin-bar" style="width:42%;background:linear-gradient(90deg,var(--svx-buy),var(--svi-gold))"></span></div>
@@ -888,7 +1199,7 @@
         <div class="svi-card">
           <h4>Max Position Size (${sub.name})</h4>
           <div class="svi-slider-row" style="margin-top:10px;">
-            <input type="range" id="svi-pos-limit" min="1000" max="20000" step="500" value="${sub.maxOrderSize}" oninput="document.getElementById('svi-pos-limit-val').textContent = SVO2.fmt(this.value) + ' units'">
+            <input type="range" id="svi-pos-limit" min="1000" max="20000" step="500" value="${sub.maxOrderSize}" oninput="document.getElementById('svi-pos-limit-val').textContent = SVO2.fmt(this.value) + ' units'" aria-label="Max position size">
             <span class="svi-slider-val" id="svi-pos-limit-val">${SVO2.fmt(sub.maxOrderSize)} units</span>
           </div>
           <p class="svi-desc">Orders that would breach this hard cap are cancelled automatically before they reach the matching engine.</p>
@@ -896,7 +1207,7 @@
         <div class="svi-card">
           <h4>Max Daily Drawdown</h4>
           <div class="svi-slider-row" style="margin-top:10px;">
-            <input type="range" id="svi-dd-limit" min="2" max="30" step="1" value="${sub.maxDrawdown}" oninput="document.getElementById('svi-dd-limit-val').textContent = this.value + '%'">
+            <input type="range" id="svi-dd-limit" min="2" max="30" step="1" value="${sub.maxDrawdown}" oninput="document.getElementById('svi-dd-limit-val').textContent = this.value + '%'" aria-label="Max daily drawdown">
             <span class="svi-slider-val" id="svi-dd-limit-val">${sub.maxDrawdown}%</span>
           </div>
           <p class="svi-desc">Breaching this limit triggers an automatic trading halt on the sub-account for the remainder of the session.</p>
@@ -922,9 +1233,8 @@
     else if (v >= 90) SVO2.showToast("Tier 2 breach — simulated partial de-risking triggered.");
     else if (v >= 80) SVO2.showToast("Tier 1 breach — simulated margin call issued.");
   }
-  function simulateDrawdownBreach() {
-    SVO2.showToast(`Daily drawdown limit breached on ${activeSub().name} — trading halted (simulated).`);
-  }
+  function simulateDrawdownBreach() { SVO2.showToast(`Daily drawdown limit breached on ${activeSub().name} — trading halted (simulated).`); }
+  window.selectSubAccount = selectSubAccount; window.onMarginUtilChange = onMarginUtilChange; window.simulateDrawdownBreach = simulateDrawdownBreach;
 
   /* ---------------- Connectivity & Infrastructure ---------------- */
   function renderConnectivitySection() {
@@ -970,7 +1280,6 @@
       </div>
       <p class="svi-note">Illustrative connectivity simulation — no real FIX gateway, colocation facility, or API infrastructure is connected.</p>`;
   }
-
   function sendFixTestOrder() {
     svxState.fixSeq++;
     const seqEl = document.getElementById("svi-fix-seq");
@@ -986,6 +1295,7 @@
     }
     SVO2.showToast("FIX NewOrderSingle sent — ExecutionReport (39=0 New) received.");
   }
+  window.sendFixTestOrder = sendFixTestOrder;
 
   /* ---------------- Clearing & Settlement ---------------- */
   function renderClearingSection() {
@@ -1018,7 +1328,7 @@
           <tr><td>Fireblocks</td><td>MPC Custody</td><td><span class="svi-chip warn">Pending KYB</span></td><td>$0.00</td><td><button class="svi-btn small ghost" disabled>Settle</button></td></tr>
         </tbody>
       </table></div>
-      <p class="svi-desc" style="margin-top:8px;">Trading against tri-party-held collateral lets institutions keep assets with an independent custodian instead of pre-funding the exchange directly, reducing counterparty risk.</p>
+      <p class="svi-desc" style="margin-top:8px;">Trading against tri-party-held collateral lets institutions keep assets with an independent custodian instead of pre-funding the exchange directly, reducing counterparty risk. Custodian names are shown for illustration only — no integration or relationship is implied.</p>
 
       <div class="svi-section-title">Netting &amp; Straight-Through Processing</div>
       <div class="svi-flowline">
@@ -1035,24 +1345,34 @@
       <button class="svi-btn small solid" onclick="runNettingCycle()" style="margin-top:12px;">Run Netting Cycle</button>
       <p class="svi-note">Illustrative clearing &amp; settlement simulation — no real custodian, netting engine, or back-office connection exists.</p>`;
   }
-
-  function settleCustodian(name) {
-    SVO2.showToast(`Settlement instruction sent to ${name} (simulated) — funds move T+0 against tri-party-held collateral.`);
-  }
+  function settleCustodian(name) { SVO2.showToast(`Settlement instruction sent to ${name} (simulated) — funds move T+0 against tri-party-held collateral.`); }
   function runNettingCycle() {
     svxState.stpNetted += Math.round(rand(4, 14));
     svxState.stpRate = Math.min(99.9, svxState.stpRate + rand(0, 0.3));
-    const nEl = document.getElementById("svi-stp-netted");
-    const rEl = document.getElementById("svi-stp-rate");
+    const nEl = document.getElementById("svi-stp-netted"), rEl = document.getElementById("svi-stp-rate");
     if (nEl) nEl.textContent = svxState.stpNetted;
     if (rEl) rEl.textContent = svxState.stpRate.toFixed(1) + "%";
     SVO2.showToast("Netting cycle complete — positions reconciled straight-through to the back office.");
   }
+  window.settleCustodian = settleCustodian; window.runNettingCycle = runNettingCycle;
 
   /* ---------------- Data & Analytics ---------------- */
   const L3_INSTRUMENTS = ["RAK-URB", "NAT-REM", "REN-AVD", "IND-EFF", "BLU-CST"];
   function renderDataSection() {
     return `
+      <div class="svi-section-title">Spread Analysis</div>
+      <p class="svi-desc" style="margin:-4px 0 10px;">Two-instrument relative-value study — dual-axis price overlay, the spread series with its mean, a distribution histogram, and summary statistics.</p>
+      <div class="spread-picker">
+        <div class="svi-field" style="margin:0;"><label>Instrument A (left axis)</label>
+          <select id="data-spread-a">${SVO2.creditTypes.map((c, i) => `<option value="${i}" ${i === svxState.dataSpreadA ? "selected" : ""}>${c.ticker}</option>`).join("")}</select>
+        </div>
+        <div class="svi-field" style="margin:0;"><label>Instrument B (right axis)</label>
+          <select id="data-spread-b">${SVO2.creditTypes.map((c, i) => `<option value="${i}" ${i === svxState.dataSpreadB ? "selected" : ""}>${c.ticker}</option>`).join("")}</select>
+        </div>
+        <button class="svi-btn solid" onclick="renderDataSpread(true)">Analyse Spread</button>
+      </div>
+      <div id="data-spread"></div>
+
       <div class="svi-section-title">Level 3 Order-By-Order Feed</div>
       <div class="svi-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
@@ -1102,17 +1422,11 @@
       </div>
       <p class="svi-note">Illustrative data &amp; analytics simulation — figures are generated client-side for demonstration.</p>`;
   }
-
   function toggleL3Feed() {
     svxState.l3Running = !svxState.l3Running;
     const btn = document.getElementById("svi-l3-toggle");
-    if (svxState.l3Running) {
-      if (btn) { btn.textContent = "Disable Level 3 Feed"; btn.classList.remove("solid"); btn.classList.add("ghost"); }
-      startL3Feed();
-    } else {
-      if (btn) { btn.textContent = "Enable Level 3 Feed"; btn.classList.add("solid"); btn.classList.remove("ghost"); }
-      stopL3Feed();
-    }
+    if (svxState.l3Running) { if (btn) { btn.textContent = "Disable Level 3 Feed"; btn.classList.remove("solid"); btn.classList.add("ghost"); } startL3Feed(); }
+    else { if (btn) { btn.textContent = "Enable Level 3 Feed"; btn.classList.add("solid"); btn.classList.remove("ghost"); } stopL3Feed(); }
   }
   function startL3Feed() {
     stopL3Feed();
@@ -1132,17 +1446,14 @@
       while (feed.children.length > 40) feed.removeChild(feed.lastChild);
     }, 350);
   }
-  function stopL3Feed() {
-    if (svxState.l3Interval) { clearInterval(svxState.l3Interval); svxState.l3Interval = null; }
-  }
+  function stopL3Feed() { if (svxState.l3Interval) { clearInterval(svxState.l3Interval); svxState.l3Interval = null; } }
   function exportTickData() {
     const inst = document.getElementById("svi-tick-instrument").value;
     const days = Number(document.getElementById("svi-tick-range").value);
     const rows = ["timestamp,instrument,side,price,size"];
     const base = 18 + Math.random() * 8;
     const count = Math.min(4000, days * 200);
-    let t = Date.now() - days * 86400000;
-    let px = base;
+    let t = Date.now() - days * 86400000, px = base;
     for (let i = 0; i < count; i++) {
       px = Math.max(0.5, px + rand(-0.15, 0.15));
       t += Math.round(rand(2000, 60000));
@@ -1150,17 +1461,12 @@
     }
     const blob = new Blob([rows.join("\n")], { type: "text/csv" });
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${inst}_tick_data_${days}d.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    a.href = URL.createObjectURL(blob); a.download = `${inst}_tick_data_${days}d.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
     SVO2.showToast(`Exported ${count.toLocaleString()} simulated ticks for ${inst}.`);
   }
   function runBacktest() {
-    const winRate = rand(48, 68);
-    const sharpe = rand(0.7, 2.1);
-    const maxDD = rand(-22, -6);
+    const winRate = rand(48, 68), sharpe = rand(0.7, 2.1), maxDD = rand(-22, -6);
     const result = document.getElementById("svi-bt-result");
     if (result) result.innerHTML = `
       <div class="svi-grid svi-grid-3" style="margin-top:12px;">
@@ -1170,7 +1476,9 @@
       </div>`;
     SVO2.showToast("Backtest complete (simulated).");
   }
+  window.toggleL3Feed = toggleL3Feed; window.exportTickData = exportTickData; window.runBacktest = runBacktest;
 
+  /* ===================== main render ===================== */
   function renderMain() {
     const el = document.getElementById("svx-main");
     if (svxState.tab === "spot") el.innerHTML = renderSpot();
@@ -1179,6 +1487,8 @@
     else if (svxState.tab === "risk") el.innerHTML = renderRisk();
     else if (svxState.tab === "institutional") el.innerHTML = renderInstitutional();
     refreshAccountStrip();
+
+    if (svxState.tab === "institutional") afterInstitutionalRender();
 
     if (svxState.tab === "spot") {
       const c = SVO2.creditTypes[svxState.selected];
@@ -1192,8 +1502,6 @@
         low: SVO2.convertPrice(x.low, qc), close: SVO2.convertPrice(x.close, qc), volume: x.volume,
       }));
       const wrap = document.getElementById("candle-chart-wrap");
-      if (!wrap.id) wrap.id = "candle-chart-wrap";
-
       if (svxState.chartType === "candles") {
         SVO2.renderCandleChart(wrap, candles, { w: 1040, h: 440 });
       } else {
@@ -1213,7 +1521,7 @@
       const qty = getOptionQty(idx);
       const chartEl = document.getElementById("option-payoff-chart");
       const stats = SVO2.renderOptionPayoff(chartEl, opt, side, qty);
-      const fmtPnl = v => (v === Infinity ? "Unlimited" : v === -Infinity ? "Unlimited" : SVO2.fmtUsd(Math.abs(v)));
+      const fmtPnl = v => (v === Infinity || v === -Infinity ? "Unlimited" : SVO2.fmtUsd(Math.abs(v)));
       document.getElementById("option-payoff-summary").innerHTML =
         `<strong>${side === "buy" ? "Long" : "Short"} ${SVO2.fmt(qty)} × ${opt.underlying} ${opt.strike.toFixed(2)} ${opt.type}</strong> (exp ${opt.expiry}) —
          Breakeven <strong>${stats.breakeven.toFixed(2)}</strong> ·
@@ -1226,6 +1534,7 @@
   paintWatchlist();
   paintNews();
   renderMain();
+}
 </script>
 </body>
 </html>

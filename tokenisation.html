@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <title>Svantero SVO₂ — Tokenisation Engine (MVP)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="The Svantero SVO₂ Tokenisation Engine converts verified carbon credits into on-chain, SVO₂-denominated tokens with a governance & trust layer and tokenised production-linked royalties. Illustrative MVP.">
+<meta property="og:title" content="Svantero SVO₂ — Tokenisation Engine (MVP)">
+<meta property="og:description" content="Verified carbon credits become on-chain tokens, gated by an institutional governance & trust layer. Illustrative demo.">
+<meta property="og:type" content="website">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http://www.w3.org/2000/svg%22%20viewBox%3D%220%200%20120%20120%22%3E%3Crect%20width%3D%22120%22%20height%3D%22120%22%20fill%3D%22%23282e35%22/%3E%3Cg%20transform%3D%22translate(15,14.865)%22%20fill%3D%22%23C9A227%22%3E%3Cpath%20d%3D%22M5,51h23.677L45,79.271L61.322,51H85v-6H64.786l19.63-34H5.584l19.63,34H5V51z%20M45,68.368L34.972,51h20.055L45,68.368z%20%20%20M14.765,16h60.47L58.492,45H31.508L14.765,16z%22/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -15,7 +19,8 @@
 
   <div class="disclaimer-banner">
     Illustrative MVP for demonstration purposes only. The tokenisation flow below is a simulated demo; no real
-    certification, minting, or blockchain transaction occurs.
+    certification, minting, or blockchain transaction occurs. Standards, token frameworks, and regulators named on
+    this page are referenced for illustration only — no integration, endorsement, or relationship is implied.
   </div>
 
   <div class="page-title">
@@ -45,7 +50,7 @@
     <div class="card">
       <h3>Tokenise a Credit — Demo</h3>
       <div class="field">
-        <label>Project / origin</label>
+        <label for="tok-project">Project / origin</label>
         <select id="tok-project">
           <option>Ras Al Khaimah — Regenerative Urbanisation</option>
           <option>Multi-Origin Partner — Nature-Based Removal</option>
@@ -54,7 +59,7 @@
         </select>
       </div>
       <div class="field">
-        <label>Verified credit volume (tCO₂e)</label>
+        <label for="tok-volume">Verified credit volume (tCO₂e)</label>
         <input type="number" id="tok-volume" placeholder="e.g. 5000" min="0">
       </div>
       <button class="btn btn-primary btn-block" onclick="runTokenisation()">Tokenise Credit</button>
@@ -143,7 +148,7 @@
     <p style="font-size:11px;color:var(--grey-light);margin-top:10px;">
       SVBR is Svantero's existing, live tokenised royalty offering. The RAK-specific products are new and
       illustrative — indicative terms only, pending final structuring and regulatory sign-off under the RAK DAO
-      / FSRA licensing track.
+      / FSRA licensing track. Third-party standards and regulator names are shown for illustration only.
     </p>
   </div>
 
@@ -178,15 +183,15 @@
 
 </div>
 
-<div class="modal-overlay" id="royalty-invest-modal">
+<div class="modal-overlay" id="royalty-invest-modal" aria-hidden="true">
   <div class="modal" style="max-width:480px;">
-    <div class="modal-head"><h4>Invest in Royalty Tokens</h4><button class="modal-close" onclick="SVO2.closeModal('royalty-invest-modal')">&times;</button></div>
+    <div class="modal-head"><h4>Invest in Royalty Tokens</h4><button class="modal-close" aria-label="Close" onclick="SVO2.closeModal('royalty-invest-modal')">&times;</button></div>
     <div class="field">
-      <label>Product</label>
+      <label for="royalty-product-select">Product</label>
       <select id="royalty-product-select" onchange="updateRoyaltyCalc()"></select>
     </div>
     <div class="field">
-      <label>Number of tokens</label>
+      <label for="royalty-qty">Number of tokens</label>
       <input type="number" id="royalty-qty" placeholder="e.g. 2" min="0" oninput="updateRoyaltyCalc()">
     </div>
     <div id="royalty-calc-output" style="font-size:12.5px;color:var(--grey);margin:10px 0;"></div>
@@ -201,6 +206,10 @@
 
 <script src="app.js"></script>
 <script>
+  if (!window.SVO2) {
+    document.querySelector(".page-wrap").innerHTML =
+      '<div class="disclaimer-banner">Couldn\'t load the demo engine (app.js). Make sure app.js is in the same folder as this page, then reload.</div>';
+  } else {
   SVO2.renderHeader("tokenisation");
 
   /* ---------------- Tokenisation Progress ---------------- */
@@ -251,16 +260,16 @@
   }
   paintRoyaltyProducts();
 
-  function openRoyaltyModal(productId) {
+  window.openRoyaltyModal = function (productId) {
     document.getElementById("royalty-product-select").innerHTML = SVO2.royaltyProducts.map(p =>
       `<option value="${p.id}" ${p.id === productId ? "selected" : ""}>${p.name} (${p.symbol})</option>`
     ).join("");
     document.getElementById("royalty-qty").value = "";
     updateRoyaltyCalc();
     SVO2.openModal("royalty-invest-modal");
-  }
+  };
 
-  function updateRoyaltyCalc() {
+  window.updateRoyaltyCalc = function () {
     const id = document.getElementById("royalty-product-select").value;
     const p = SVO2.royaltyProducts.find(x => x.id === id);
     const qty = parseFloat(document.getElementById("royalty-qty").value) || 0;
@@ -280,16 +289,16 @@
       </table></div>`;
     }
     out.innerHTML = html;
-  }
+  };
 
-  function confirmRoyaltyInvest() {
+  window.confirmRoyaltyInvest = function () {
     const id = document.getElementById("royalty-product-select").value;
     const p = SVO2.royaltyProducts.find(x => x.id === id);
     const qty = parseFloat(document.getElementById("royalty-qty").value);
     if (!qty || qty <= 0) { SVO2.showToast("Enter a number of tokens."); return; }
     SVO2.closeModal("royalty-invest-modal");
     SVO2.showToast(`Invested in ${SVO2.fmt(qty)} × ${p.symbol} for ${SVO2.fmtUsd(qty * p.priceUsd)} (simulated).`);
-  }
+  };
 
   document.getElementById("trust-class-body").innerHTML = SVO2.trustClasses.map(t =>
     `<tr><td>${t.cls}</td><td>${t.name}<br><span style="color:var(--grey-light);font-size:11.5px;">${t.desc}</span></td><td>${t.bonding}</td><td>${t.cadence}</td></tr>`
@@ -312,10 +321,6 @@
     "Multi-Origin Partner — Industrial Efficiency": "Class III",
   };
 
-  /* ---------------- Pre-flight: Upload Documentation / Governance Checks / KYC ----------------
-     Modelled on institutional RWA issuance standards (e.g. pre-issuance qualification, independent
-     custody/legal verification, and KYC/AML-gated transfer approval): tokenisation is blocked until
-     the required documentation, governance checks, and KYC requirements are all satisfied. */
   const PREFLIGHT_DOCS = [
     "Registry Extract / Verification Report",
     "Independent Auditor Confirmation",
@@ -343,7 +348,7 @@
         <span>${d}</span>
         <span style="display:flex;align-items:center;gap:8px;">
           <span id="doc-status-${i}" class="tag tag-red">Not uploaded</span>
-          <input type="file" id="doc-file-${i}" style="font-size:11px;max-width:150px;" onchange="markDocUploaded(${i})">
+          <input type="file" id="doc-file-${i}" aria-label="Upload ${d}" style="font-size:11px;max-width:150px;" onchange="markDocUploaded(${i})">
         </span>
       </div>
     `).join("");
@@ -362,16 +367,16 @@
   }
   paintPreflight();
 
-  function markDocUploaded(i) {
+  window.markDocUploaded = function (i) {
     const fileInput = document.getElementById(`doc-file-${i}`);
     const status = document.getElementById(`doc-status-${i}`);
     if (fileInput.files.length) {
       status.textContent = "Uploaded ✓";
       status.className = "tag tag-green";
     }
-  }
+  };
 
-  function quickFillPreflight() {
+  window.quickFillPreflight = function () {
     PREFLIGHT_DOCS.forEach((_, i) => {
       const status = document.getElementById(`doc-status-${i}`);
       status.textContent = "Uploaded ✓";
@@ -380,7 +385,7 @@
     PREFLIGHT_GOVERNANCE.forEach((_, i) => { document.getElementById(`gov-check-${i}`).checked = true; });
     PREFLIGHT_KYC.forEach((_, i) => { document.getElementById(`kyc-check-${i}`).checked = true; });
     SVO2.showToast("Pre-flight checklist filled for demo purposes.");
-  }
+  };
 
   function preflightComplete() {
     const docsOk = PREFLIGHT_DOCS.every((_, i) => document.getElementById(`doc-status-${i}`).textContent.includes("Uploaded"));
@@ -389,7 +394,7 @@
     return docsOk && govOk && kycOk;
   }
 
-  function runTokenisation() {
+  window.runTokenisation = function () {
     const project = document.getElementById("tok-project").value;
     const volume = parseFloat(document.getElementById("tok-volume").value);
     if (!volume || volume <= 0) { SVO2.showToast("Enter a verified credit volume."); return; }
@@ -427,8 +432,6 @@
         result.style.display = "block";
         SVO2.showToast(`Tokenised ${SVO2.fmt(volume)} tCO₂e as ${tokenId}, ${trustClass} (simulated).`);
 
-        // Feed this freshly-tokenised batch straight into the live pipeline tracker at the
-        // "Tokenisation" stage, so the two cards on this page stay in sync.
         SVO2.tokenisationQueue.unshift({
           project: project, volume: volume, trustClass: trustClass, stage: 2,
           updated: new Date().toISOString().slice(0, 10),
@@ -436,6 +439,7 @@
         paintTokenisationQueue();
       }
     }, 420);
+  };
   }
 </script>
 </body>
